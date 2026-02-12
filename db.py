@@ -564,14 +564,27 @@ def get_listings(filters: Optional[dict] = None,
     where = " AND ".join(where_clauses) if where_clauses else "1=1"
 
     sort_map = {
+        "title_asc": "LOWER(title) ASC",
+        "title_desc": "LOWER(title) DESC",
         "price_asc": "current_price ASC",
         "price_desc": "current_price DESC",
+        "brand_asc": "brand IS NULL, LOWER(brand) ASC",
+        "brand_desc": "brand IS NULL, LOWER(brand) DESC",
+        "location_asc": "location IS NULL, LOWER(location) ASC",
+        "location_desc": "location IS NULL, LOWER(location) DESC",
+        "first_seen_asc": "first_seen ASC",
+        "first_seen_desc": "first_seen DESC",
+        "last_seen_asc": "last_seen ASC",
+        "last_seen_desc": "last_seen DESC",
+        "price_drop_asc": "(COALESCE(original_price, 0) - COALESCE(current_price, 0)) ASC",
+        "price_drop_desc": "(COALESCE(original_price, 0) - COALESCE(current_price, 0)) DESC",
+        # Backward-compatible aliases
         "newest": "first_seen DESC",
         "oldest": "first_seen ASC",
         "last_seen": "last_seen DESC",
-        "price_drop": "(original_price - current_price) DESC",
+        "price_drop": "(COALESCE(original_price, 0) - COALESCE(current_price, 0)) DESC",
     }
-    sort = sort_map.get(filters.get("sort_by", "last_seen"), "last_seen DESC")
+    sort = sort_map.get(filters.get("sort_by", "last_seen_desc"), "last_seen DESC")
 
     rows = conn.execute(
         f"SELECT * FROM listings WHERE {where} ORDER BY {sort}", params

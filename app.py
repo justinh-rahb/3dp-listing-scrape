@@ -4,6 +4,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -69,6 +70,14 @@ async def index(request: Request, brand: Optional[str] = None,
                 min_price: Optional[str] = None, max_price: Optional[str] = None,
                 location: Optional[str] = None, search: Optional[str] = None,
                 active_only: str = "1", show_hidden: str = "0", sort_by: str = "last_seen"):
+    sort_aliases = {
+        "last_seen": "last_seen_desc",
+        "newest": "first_seen_desc",
+        "oldest": "first_seen_asc",
+        "price_drop": "price_drop_desc",
+    }
+    current_sort = sort_aliases.get(sort_by, sort_by)
+
     min_price_value = parse_optional_float(min_price)
     max_price_value = parse_optional_float(max_price)
 
@@ -80,8 +89,33 @@ async def index(request: Request, brand: Optional[str] = None,
         "search": search,
         "active_only": active_only == "1",
         "show_hidden": show_hidden == "1",
-        "sort_by": sort_by,
+        "sort_by": current_sort,
     }
+
+    sortable_columns = {
+        "title": ("title_asc", "title_desc"),
+        "price": ("price_asc", "price_desc"),
+        "change": ("price_drop_asc", "price_drop_desc"),
+        "brand": ("brand_asc", "brand_desc"),
+        "location": ("location_asc", "location_desc"),
+        "first_seen": ("first_seen_asc", "first_seen_desc"),
+    }
+    sort_urls = {}
+    sort_icons = {}
+    current_params = dict(request.query_params)
+
+    for column, (asc_key, desc_key) in sortable_columns.items():
+        next_key = desc_key if current_sort == asc_key else asc_key
+        params = dict(current_params)
+        params["sort_by"] = next_key
+        sort_urls[column] = f"/?{urlencode(params)}"
+        if current_sort == asc_key:
+            sort_icons[column] = "↑"
+        elif current_sort == desc_key:
+            sort_icons[column] = "↓"
+        else:
+            sort_icons[column] = ""
+
     listings = db.get_listings(filters)
     brands = db.get_distinct_brands()
     stats = db.get_stats()
@@ -89,6 +123,7 @@ async def index(request: Request, brand: Optional[str] = None,
     return templates.TemplateResponse("index.html", {
         "request": request, "listings": listings, "brands": brands,
         "filters": filters, "stats": stats, "scheduler": sched_status,
+        "sort_urls": sort_urls, "sort_icons": sort_icons,
     })
 
 

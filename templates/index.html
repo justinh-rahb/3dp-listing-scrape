@@ -62,11 +62,14 @@
 
             <div class="mb-2">
                 <select name="sort_by" class="form-select form-select-sm">
-                    <option value="last_seen" {% if filters.sort_by == 'last_seen' %}selected{% endif %}>Last Seen</option>
-                    <option value="newest" {% if filters.sort_by == 'newest' %}selected{% endif %}>Newest</option>
+                    <option value="last_seen_desc" {% if filters.sort_by == 'last_seen_desc' %}selected{% endif %}>Last Seen (Newest)</option>
+                    <option value="last_seen_asc" {% if filters.sort_by == 'last_seen_asc' %}selected{% endif %}>Last Seen (Oldest)</option>
+                    <option value="first_seen_desc" {% if filters.sort_by == 'first_seen_desc' %}selected{% endif %}>First Seen (Newest)</option>
+                    <option value="first_seen_asc" {% if filters.sort_by == 'first_seen_asc' %}selected{% endif %}>First Seen (Oldest)</option>
                     <option value="price_asc" {% if filters.sort_by == 'price_asc' %}selected{% endif %}>Price: Low-High</option>
                     <option value="price_desc" {% if filters.sort_by == 'price_desc' %}selected{% endif %}>Price: High-Low</option>
-                    <option value="price_drop" {% if filters.sort_by == 'price_drop' %}selected{% endif %}>Price Drop</option>
+                    <option value="price_drop_desc" {% if filters.sort_by == 'price_drop_desc' %}selected{% endif %}>Price Drop (High-Low)</option>
+                    <option value="price_drop_asc" {% if filters.sort_by == 'price_drop_asc' %}selected{% endif %}>Price Drop (Low-High)</option>
                 </select>
             </div>
 
@@ -113,12 +116,12 @@
                 <thead>
                     <tr>
                         <th></th>
-                        <th>Title</th>
-                        <th>Price</th>
-                        <th>Change</th>
-                        <th>Brand</th>
-                        <th>Location</th>
-                        <th>First Seen</th>
+                        <th><a href="{{ sort_urls.title }}" class="text-decoration-none link-body-emphasis">Title {{ sort_icons.title }}</a></th>
+                        <th><a href="{{ sort_urls.price }}" class="text-decoration-none link-body-emphasis">Price {{ sort_icons.price }}</a></th>
+                        <th><a href="{{ sort_urls.change }}" class="text-decoration-none link-body-emphasis">Change {{ sort_icons.change }}</a></th>
+                        <th><a href="{{ sort_urls.brand }}" class="text-decoration-none link-body-emphasis">Brand {{ sort_icons.brand }}</a></th>
+                        <th><a href="{{ sort_urls.location }}" class="text-decoration-none link-body-emphasis">Location {{ sort_icons.location }}</a></th>
+                        <th><a href="{{ sort_urls.first_seen }}" class="text-decoration-none link-body-emphasis">First Seen {{ sort_icons.first_seen }}</a></th>
                         <th></th>
                     </tr>
                 </thead>
