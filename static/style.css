@@ -22,3 +22,25 @@
     display: inline-flex;
     align-items: center;
 }
+
+.theme-toggle-btn {
+    border: 0;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    border-radius: 999px;
+}
+
+.theme-toggle-btn:hover {
+    background: color-mix(in srgb, var(--bs-body-color) 10%, transparent);
+    color: var(--bs-body-color);
+}
+
+.theme-toggle-btn:focus,
+.theme-toggle-btn:focus-visible {
+    box-shadow: 0 0 0 0.2rem color-mix(in srgb, var(--bs-primary) 20%, transparent);
+}
+
+#themeIconGlyph {
+    font-size: 1.05rem;
+    line-height: 1;
+}

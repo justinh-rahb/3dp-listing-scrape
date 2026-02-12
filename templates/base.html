@@ -30,13 +30,8 @@
                         </svg>
                     </a>
                 </div>
-                <button id="themeToggle" class="btn btn-sm btn-outline-secondary" type="button" aria-label="Toggle color mode" title="Toggle color mode">
-                    <svg id="themeIconSun" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
-                        <path d="M8 3a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 8 3zm0 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm5-2a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1 0-1h1a.5.5 0 0 1 .5.5zM5.5 8a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1 0-1h1a.5.5 0 0 1 .5.5zm4.95 2.95a.5.5 0 0 1 .7 0l.7.7a.5.5 0 0 1-.7.7l-.7-.7a.5.5 0 0 1 0-.7zM4.85 5.35a.5.5 0 0 1 .7 0l.7.7a.5.5 0 1 1-.7.7l-.7-.7a.5.5 0 0 1 0-.7zm6.3.7a.5.5 0 0 1 0-.7l.7-.7a.5.5 0 1 1 .7.7l-.7.7a.5.5 0 0 1-.7 0zM5.55 11.65a.5.5 0 0 1 0 .7l-.7.7a.5.5 0 1 1-.7-.7l.7-.7a.5.5 0 0 1 .7 0zM8 11.5a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0v-1a.5.5 0 0 1 .5-.5z"></path>
-                    </svg>
-                    <svg id="themeIconMoon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
-                        <path d="M11.47 12.79A6.97 6.97 0 0 1 8 13.5a7 7 0 0 1-6.69-9.08.5.5 0 0 1 .66-.31 5.5 5.5 0 0 0 6.92 6.92.5.5 0 0 1 .31.66 6.95 6.95 0 0 1-.73 1.1 5.98 5.98 0 0 0 3-.01z"></path>
-                    </svg>
+                <button id="themeToggle" class="btn btn-sm theme-toggle-btn" type="button" aria-label="Toggle color mode">
+                    <span id="themeIconGlyph" aria-hidden="true">☾</span>
                 </button>
             </div>
         </div>
@@ -56,15 +51,10 @@
             function applyTheme(theme) {
                 html.setAttribute("data-bs-theme", theme);
                 localStorage.setItem("theme", theme);
-                const sun = document.getElementById("themeIconSun");
-                const moon = document.getElementById("themeIconMoon");
-                if (sun && moon) {
-                    sun.classList.toggle("d-none", theme !== "dark");
-                    moon.classList.toggle("d-none", theme === "dark");
-                }
+                const glyph = document.getElementById("themeIconGlyph");
+                if (glyph) glyph.textContent = theme === "dark" ? "☀" : "☾";
                 const nextLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
                 btn.setAttribute("aria-label", nextLabel);
-                btn.setAttribute("title", nextLabel);
             }
 
             const current = html.getAttribute("data-bs-theme") || "light";
