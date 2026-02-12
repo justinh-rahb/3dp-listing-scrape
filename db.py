@@ -3,9 +3,9 @@
 import json
 import sqlite3
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
-from config import DB_PATH
+from config import DB_PATH, DEFAULT_BRAND_KEYWORDS, DEFAULT_SEARCH_QUERIES, DEFAULT_SETTINGS
 
 
 def get_conn(db_path: str = DB_PATH) -> sqlite3.Connection:
@@ -58,6 +58,34 @@ def init_db(db_path: str = DB_PATH):
             search_query    TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS search_queries (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            url     TEXT NOT NULL,
+            label   TEXT NOT NULL,
+            enabled INTEGER DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS brand_keywords (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            brand   TEXT NOT NULL,
+            keyword TEXT NOT NULL,
+            UNIQUE(brand, keyword)
+        );
+
+        CREATE TABLE IF NOT EXISTS msrp_entries (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            brand     TEXT NOT NULL,
+            model     TEXT NOT NULL,
+            msrp_cad  REAL NOT NULL,
+            msrp_usd  REAL,
+            UNIQUE(brand, model)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_snapshots_kijiji_id ON price_snapshots(kijiji_id);
         CREATE INDEX IF NOT EXISTS idx_snapshots_scraped_at ON price_snapshots(scraped_at);
         CREATE INDEX IF NOT EXISTS idx_listings_brand ON listings(brand);
@@ -65,20 +93,269 @@ def init_db(db_path: str = DB_PATH):
         CREATE INDEX IF NOT EXISTS idx_listings_current_price ON listings(current_price);
     """)
     conn.commit()
+
+    # Seed defaults if tables are empty
+    _seed_defaults(conn)
     conn.close()
 
 
+def _seed_defaults(conn: sqlite3.Connection):
+    """Populate settings, search queries, brands, and MSRP on first run."""
+    # Settings
+    existing = conn.execute("SELECT COUNT(*) as c FROM settings").fetchone()["c"]
+    if existing == 0:
+        for key, value in DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (key, json.dumps(value))
+            )
+
+    # Search queries
+    existing = conn.execute("SELECT COUNT(*) as c FROM search_queries").fetchone()["c"]
+    if existing == 0:
+        for q in DEFAULT_SEARCH_QUERIES:
+            conn.execute(
+                "INSERT INTO search_queries (url, label, enabled) VALUES (?, ?, 1)",
+                (q["url"], q["label"])
+            )
+
+    # Brand keywords
+    existing = conn.execute("SELECT COUNT(*) as c FROM brand_keywords").fetchone()["c"]
+    if existing == 0:
+        for brand, keywords in DEFAULT_BRAND_KEYWORDS.items():
+            for kw in keywords:
+                conn.execute(
+                    "INSERT OR IGNORE INTO brand_keywords (brand, keyword) VALUES (?, ?)",
+                    (brand, kw)
+                )
+
+    # MSRP entries from msrp_data.json
+    existing = conn.execute("SELECT COUNT(*) as c FROM msrp_entries").fetchone()["c"]
+    if existing == 0:
+        import os
+        msrp_path = os.path.join(os.path.dirname(__file__), "msrp_data.json")
+        if os.path.exists(msrp_path):
+            with open(msrp_path) as f:
+                msrp_data = json.load(f)
+            for brand, models in msrp_data.items():
+                for model, prices in models.items():
+                    conn.execute(
+                        "INSERT OR IGNORE INTO msrp_entries (brand, model, msrp_cad, msrp_usd) VALUES (?, ?, ?, ?)",
+                        (brand, model, prices.get("msrp_cad", 0), prices.get("msrp_usd"))
+                    )
+
+    conn.commit()
+
+
+# ── Settings CRUD ──────────────────────────────────────────────
+
+def get_setting(key: str, default: Any = None, conn: Optional[sqlite3.Connection] = None) -> Any:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    if close:
+        conn.close()
+    if row:
+        return json.loads(row["value"])
+    return default
+
+
+def set_setting(key: str, value: Any, conn: Optional[sqlite3.Connection] = None):
+    close = conn is None
+    if close:
+        conn = get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        (key, json.dumps(value))
+    )
+    conn.commit()
+    if close:
+        conn.close()
+
+
+def get_all_settings(conn: Optional[sqlite3.Connection] = None) -> dict:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    if close:
+        conn.close()
+    return {row["key"]: json.loads(row["value"]) for row in rows}
+
+
+# ── Search Queries CRUD ───────────────────────────────────────
+
+def get_search_queries(enabled_only: bool = False, conn: Optional[sqlite3.Connection] = None) -> list[dict]:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    if enabled_only:
+        rows = conn.execute("SELECT * FROM search_queries WHERE enabled = 1 ORDER BY id").fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM search_queries ORDER BY id").fetchall()
+    if close:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_search_query(url: str, label: str, conn: Optional[sqlite3.Connection] = None) -> int:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    cursor = conn.execute(
+        "INSERT INTO search_queries (url, label, enabled) VALUES (?, ?, 1)",
+        (url, label)
+    )
+    conn.commit()
+    qid = cursor.lastrowid
+    if close:
+        conn.close()
+    return qid
+
+
+def update_search_query(query_id: int, url: Optional[str] = None,
+                        label: Optional[str] = None, enabled: Optional[bool] = None,
+                        conn: Optional[sqlite3.Connection] = None):
+    close = conn is None
+    if close:
+        conn = get_conn()
+    updates = []
+    params = []
+    if url is not None:
+        updates.append("url = ?")
+        params.append(url)
+    if label is not None:
+        updates.append("label = ?")
+        params.append(label)
+    if enabled is not None:
+        updates.append("enabled = ?")
+        params.append(1 if enabled else 0)
+    if updates:
+        params.append(query_id)
+        conn.execute(f"UPDATE search_queries SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+    if close:
+        conn.close()
+
+
+def delete_search_query(query_id: int, conn: Optional[sqlite3.Connection] = None):
+    close = conn is None
+    if close:
+        conn = get_conn()
+    conn.execute("DELETE FROM search_queries WHERE id = ?", (query_id,))
+    conn.commit()
+    if close:
+        conn.close()
+
+
+# ── Brand Keywords CRUD ───────────────────────────────────────
+
+def get_brand_keywords(conn: Optional[sqlite3.Connection] = None) -> list[dict]:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    rows = conn.execute("SELECT * FROM brand_keywords ORDER BY brand, keyword").fetchall()
+    if close:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_brand_keywords_map(conn: Optional[sqlite3.Connection] = None) -> dict[str, list[str]]:
+    """Return brand keywords as a {brand: [keywords]} dict for use in detection."""
+    entries = get_brand_keywords(conn)
+    result = {}
+    for entry in entries:
+        result.setdefault(entry["brand"], []).append(entry["keyword"])
+    return result
+
+
+def add_brand_keyword(brand: str, keyword: str, conn: Optional[sqlite3.Connection] = None) -> int:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    cursor = conn.execute(
+        "INSERT OR IGNORE INTO brand_keywords (brand, keyword) VALUES (?, ?)",
+        (brand.lower(), keyword.lower())
+    )
+    conn.commit()
+    kid = cursor.lastrowid
+    if close:
+        conn.close()
+    return kid
+
+
+def delete_brand_keyword(keyword_id: int, conn: Optional[sqlite3.Connection] = None):
+    close = conn is None
+    if close:
+        conn = get_conn()
+    conn.execute("DELETE FROM brand_keywords WHERE id = ?", (keyword_id,))
+    conn.commit()
+    if close:
+        conn.close()
+
+
+# ── MSRP CRUD ─────────────────────────────────────────────────
+
+def get_msrp_entries(conn: Optional[sqlite3.Connection] = None) -> list[dict]:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    rows = conn.execute("SELECT * FROM msrp_entries ORDER BY brand, model").fetchall()
+    if close:
+        conn.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_msrp_entry(brand: str, model: str, msrp_cad: float,
+                      msrp_usd: Optional[float] = None,
+                      conn: Optional[sqlite3.Connection] = None) -> int:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    cursor = conn.execute("""
+        INSERT INTO msrp_entries (brand, model, msrp_cad, msrp_usd)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(brand, model) DO UPDATE SET msrp_cad = ?, msrp_usd = ?
+    """, (brand.lower(), model, msrp_cad, msrp_usd, msrp_cad, msrp_usd))
+    conn.commit()
+    eid = cursor.lastrowid
+    if close:
+        conn.close()
+    return eid
+
+
+def delete_msrp_entry(entry_id: int, conn: Optional[sqlite3.Connection] = None):
+    close = conn is None
+    if close:
+        conn = get_conn()
+    conn.execute("DELETE FROM msrp_entries WHERE id = ?", (entry_id,))
+    conn.commit()
+    if close:
+        conn.close()
+
+
+def get_msrp_map(conn: Optional[sqlite3.Connection] = None) -> dict:
+    """Return MSRP data as {brand: {model: {msrp_cad, msrp_usd}}} for tracker use."""
+    entries = get_msrp_entries(conn)
+    result = {}
+    for e in entries:
+        brand = result.setdefault(e["brand"], {})
+        brand[e["model"]] = {"msrp_cad": e["msrp_cad"], "msrp_usd": e["msrp_usd"]}
+    return result
+
+
+# ── Listings CRUD (unchanged from V1) ─────────────────────────
+
 def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None) -> bool:
     """Insert or update a listing. Returns True if this is a new listing."""
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
 
     now = datetime.now(timezone.utc).isoformat()
     image_urls_json = json.dumps(listing_data.get("image_urls", []))
 
-    # Check if listing exists
     existing = conn.execute(
         "SELECT kijiji_id, current_price FROM listings WHERE kijiji_id = ?",
         (listing_data["kijiji_id"],)
@@ -146,11 +423,9 @@ def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None
 
 def add_price_snapshot(kijiji_id: str, price: Optional[float], scraped_at: str,
                        conn: Optional[sqlite3.Connection] = None):
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     conn.execute(
         "INSERT OR IGNORE INTO price_snapshots (kijiji_id, price, scraped_at) VALUES (?, ?, ?)",
         (kijiji_id, price, scraped_at)
@@ -161,11 +436,9 @@ def add_price_snapshot(kijiji_id: str, price: Optional[float], scraped_at: str,
 
 
 def start_scrape_run(search_query: str = "", conn: Optional[sqlite3.Connection] = None) -> int:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     now = datetime.now(timezone.utc).isoformat()
     cursor = conn.execute(
         "INSERT INTO scrape_runs (started_at, search_query) VALUES (?, ?)",
@@ -181,11 +454,9 @@ def start_scrape_run(search_query: str = "", conn: Optional[sqlite3.Connection] 
 def finish_scrape_run(run_id: int, listings_found: int, new_listings: int,
                       price_changes: int, errors: int,
                       conn: Optional[sqlite3.Connection] = None):
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     now = datetime.now(timezone.utc).isoformat()
     conn.execute("""
         UPDATE scrape_runs SET finished_at = ?, listings_found = ?,
@@ -199,12 +470,11 @@ def finish_scrape_run(run_id: int, listings_found: int, new_listings: int,
 
 def increment_missed_runs(seen_ids: set, conn: Optional[sqlite3.Connection] = None):
     """Increment missed_runs for active listings not seen, mark inactive if threshold hit."""
-    from config import INACTIVE_THRESHOLD
-
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
+
+    inactive_threshold = get_setting("inactive_threshold", 3, conn)
 
     active = conn.execute(
         "SELECT kijiji_id FROM listings WHERE is_active = 1"
@@ -220,7 +490,7 @@ def increment_missed_runs(seen_ids: set, conn: Optional[sqlite3.Connection] = No
             conn.execute("""
                 UPDATE listings SET is_active = 0
                 WHERE kijiji_id = ? AND missed_runs >= ?
-            """, (kid, INACTIVE_THRESHOLD))
+            """, (kid, inactive_threshold))
 
     conn.commit()
     if close:
@@ -229,10 +499,9 @@ def increment_missed_runs(seen_ids: set, conn: Optional[sqlite3.Connection] = No
 
 def get_listings(filters: Optional[dict] = None,
                  conn: Optional[sqlite3.Connection] = None) -> list[dict]:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
 
     filters = filters or {}
     where_clauses = []
@@ -284,15 +553,12 @@ def get_listings(filters: Optional[dict] = None,
 
 
 def get_listing(kijiji_id: str, conn: Optional[sqlite3.Connection] = None) -> Optional[dict]:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     row = conn.execute(
         "SELECT * FROM listings WHERE kijiji_id = ?", (kijiji_id,)
     ).fetchone()
-
     result = dict(row) if row else None
     if close:
         conn.close()
@@ -300,16 +566,13 @@ def get_listing(kijiji_id: str, conn: Optional[sqlite3.Connection] = None) -> Op
 
 
 def get_price_history(kijiji_id: str, conn: Optional[sqlite3.Connection] = None) -> list[dict]:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     rows = conn.execute(
         "SELECT price, scraped_at FROM price_snapshots WHERE kijiji_id = ? ORDER BY scraped_at",
         (kijiji_id,)
     ).fetchall()
-
     result = [dict(row) for row in rows]
     if close:
         conn.close()
@@ -317,15 +580,12 @@ def get_price_history(kijiji_id: str, conn: Optional[sqlite3.Connection] = None)
 
 
 def get_distinct_brands(conn: Optional[sqlite3.Connection] = None) -> list[str]:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     rows = conn.execute(
         "SELECT DISTINCT brand FROM listings WHERE brand IS NOT NULL AND is_active = 1 ORDER BY brand"
     ).fetchall()
-
     result = [row["brand"] for row in rows]
     if close:
         conn.close()
@@ -333,15 +593,12 @@ def get_distinct_brands(conn: Optional[sqlite3.Connection] = None) -> list[str]:
 
 
 def get_distinct_locations(conn: Optional[sqlite3.Connection] = None) -> list[str]:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
-
     rows = conn.execute(
         "SELECT DISTINCT location FROM listings WHERE location IS NOT NULL AND is_active = 1 ORDER BY location"
     ).fetchall()
-
     result = [row["location"] for row in rows]
     if close:
         conn.close()
@@ -349,10 +606,9 @@ def get_distinct_locations(conn: Optional[sqlite3.Connection] = None) -> list[st
 
 
 def get_stats(conn: Optional[sqlite3.Connection] = None) -> dict:
-    close = False
-    if conn is None:
+    close = conn is None
+    if close:
         conn = get_conn()
-        close = True
 
     stats = {}
     stats["total_listings"] = conn.execute("SELECT COUNT(*) as c FROM listings").fetchone()["c"]

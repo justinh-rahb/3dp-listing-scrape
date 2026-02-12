@@ -1,36 +1,28 @@
 """Price tracking, brand detection, and deal scoring."""
 
 import json
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from config import BRAND_KEYWORDS
 from models import Deal
 
 
-def load_msrp_data() -> dict:
-    path = os.path.join(os.path.dirname(__file__), "msrp_data.json")
-    if not os.path.exists(path):
-        return {}
-    with open(path) as f:
-        return json.load(f)
+def _get_brand_keywords() -> dict[str, list[str]]:
+    """Get brand keywords from DB."""
+    import db
+    return db.get_brand_keywords_map()
 
 
-_MSRP_DATA = None
-
-
-def get_msrp_data() -> dict:
-    global _MSRP_DATA
-    if _MSRP_DATA is None:
-        _MSRP_DATA = load_msrp_data()
-    return _MSRP_DATA
+def _get_msrp_data() -> dict:
+    """Get MSRP data from DB."""
+    import db
+    return db.get_msrp_map()
 
 
 def detect_brand(title: str, description: str = "") -> Optional[str]:
     """Detect brand from title and description."""
     combined = f"{title} {description}".lower()
-    for brand, keywords in BRAND_KEYWORDS.items():
+    for brand, keywords in _get_brand_keywords().items():
         for kw in keywords:
             if kw in combined:
                 return brand
@@ -40,15 +32,13 @@ def detect_brand(title: str, description: str = "") -> Optional[str]:
 def detect_model(title: str, description: str = "", brand: Optional[str] = None) -> Optional[str]:
     """Detect specific model from title and description."""
     combined = f"{title} {description}".lower()
-    msrp_data = get_msrp_data()
+    msrp_data = _get_msrp_data()
 
-    # If we know the brand, search its models
     if brand and brand in msrp_data:
         for model_name in msrp_data[brand]:
             if model_name.lower() in combined:
                 return model_name
     else:
-        # Search all brands
         for b, models in msrp_data.items():
             for model_name in models:
                 if model_name.lower() in combined:
@@ -61,7 +51,7 @@ def lookup_msrp(brand: Optional[str], model: Optional[str]) -> Optional[float]:
     """Look up MSRP (CAD) for a brand/model combo."""
     if not brand or not model:
         return None
-    msrp_data = get_msrp_data()
+    msrp_data = _get_msrp_data()
     brand_data = msrp_data.get(brand, {})
     model_data = brand_data.get(model, {})
     return model_data.get("msrp_cad")

@@ -11,22 +11,27 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 
-from config import MAX_PAGES_PER_QUERY, REQUEST_DELAY_MAX, REQUEST_DELAY_MIN, USER_AGENTS
+from config import USER_AGENTS
 from models import ScrapedListing
 
 logger = logging.getLogger(__name__)
 
 
 class KijijiScraper:
-    def __init__(self, session: Optional[requests.Session] = None):
+    def __init__(self, session: Optional[requests.Session] = None,
+                 delay_min: float = 2.0, delay_max: float = 5.0,
+                 max_pages: int = 5):
         self.session = session or requests.Session()
+        self.delay_min = delay_min
+        self.delay_max = delay_max
+        self.max_pages = max_pages
         self._rotate_ua()
 
     def _rotate_ua(self):
         self.session.headers.update({"User-Agent": random.choice(USER_AGENTS)})
 
     def _delay(self):
-        time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+        time.sleep(random.uniform(self.delay_min, self.delay_max))
 
     def _build_page_url(self, base_url: str, page: int) -> str:
         if page == 1:
@@ -35,7 +40,8 @@ class KijijiScraper:
         parts = base_url.rsplit("/", 1)
         return f"{parts[0]}/page-{page}/{parts[1]}"
 
-    def scrape_search(self, base_url: str, max_pages: int = MAX_PAGES_PER_QUERY) -> list[ScrapedListing]:
+    def scrape_search(self, base_url: str, max_pages: Optional[int] = None) -> list[ScrapedListing]:
+        max_pages = max_pages or self.max_pages
         """Scrape all pages of a search query. Returns deduplicated listings."""
         all_listings = []
         seen_ids = set()

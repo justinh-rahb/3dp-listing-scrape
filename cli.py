@@ -3,14 +3,12 @@
 
 import logging
 import sys
-from datetime import datetime, timezone
 
 import click
 
 import db
-from config import SEARCH_QUERIES
-from scraper import KijijiScraper
-from tracker import compute_deals, detect_brand, detect_model, lookup_msrp
+from scheduler import run_scrape
+from tracker import compute_deals
 
 
 @click.group()
@@ -28,110 +26,17 @@ def cli(verbose):
 
 @cli.command()
 @click.option("--query", "-q", help="Run only a specific search query label")
-@click.option("--max-pages", default=5, help="Max pages per query")
-@click.option("--detail/--no-detail", default=False, help="Scrape individual listing pages for full details")
-def scrape(query, max_pages, detail):
+@click.option("--max-pages", default=None, type=int, help="Max pages per query (default: from settings)")
+def scrape(query, max_pages):
     """Scrape Kijiji for 3D printer listings."""
-    scraper = KijijiScraper()
-    conn = db.get_conn()
+    result = run_scrape(max_pages=max_pages, query_filter=query)
 
-    queries = SEARCH_QUERIES
-    if query:
-        queries = [q for q in queries if q["label"] == query]
-        if not queries:
-            click.echo(f"Unknown query label: {query}")
-            click.echo(f"Available: {', '.join(q['label'] for q in SEARCH_QUERIES)}")
-            sys.exit(1)
+    if "error" in result:
+        click.echo(f"Error: {result['error']}")
+        sys.exit(1)
 
-    total_found = 0
-    total_new = 0
-    total_price_changes = 0
-    total_errors = 0
-    all_seen_ids = set()
-
-    run_id = db.start_scrape_run(
-        search_query=", ".join(q["label"] for q in queries),
-        conn=conn,
-    )
-
-    now = datetime.now(timezone.utc).isoformat()
-
-    for q in queries:
-        click.echo(f"\nSearching: {q['label']} ...")
-        try:
-            listings = scraper.scrape_search(q["url"], max_pages=max_pages)
-        except Exception as e:
-            click.echo(f"  Error: {e}")
-            total_errors += 1
-            continue
-
-        click.echo(f"  Found {len(listings)} listings")
-        total_found += len(listings)
-
-        for listing in listings:
-            all_seen_ids.add(listing.kijiji_id)
-
-            # Detect brand and model
-            brand = detect_brand(listing.title, listing.description or "")
-            model = detect_model(listing.title, listing.description or "", brand)
-            msrp = lookup_msrp(brand, model)
-
-            # Check for price change
-            existing = db.get_listing(listing.kijiji_id, conn=conn)
-            price_changed = False
-            if existing and existing["current_price"] is not None and listing.price is not None:
-                if existing["current_price"] != listing.price:
-                    price_changed = True
-                    total_price_changes += 1
-                    direction = "↓" if listing.price < existing["current_price"] else "↑"
-                    click.echo(
-                        f"  Price change {direction}: {listing.title[:50]} "
-                        f"${existing['current_price']:.0f} -> ${listing.price:.0f}"
-                    )
-
-            listing_data = {
-                "kijiji_id": listing.kijiji_id,
-                "url": listing.url,
-                "title": listing.title,
-                "price": listing.price,
-                "description": listing.description,
-                "seller_name": listing.seller_name,
-                "location": listing.location,
-                "listing_date": listing.listing_date,
-                "image_urls": listing.image_urls,
-                "brand": brand,
-                "model": model,
-                "msrp": msrp,
-            }
-
-            is_new = db.upsert_listing(listing_data, conn=conn)
-            if is_new:
-                total_new += 1
-
-            db.add_price_snapshot(listing.kijiji_id, listing.price, now, conn=conn)
-
-            # Optionally fetch detail page for new listings
-            if detail and is_new:
-                detail_data = scraper.scrape_listing_detail(listing.url)
-                if detail_data:
-                    # Update with detail info
-                    for key in ("description", "seller_name", "listing_date"):
-                        if detail_data.get(key):
-                            listing_data[key] = detail_data[key]
-                    if detail_data.get("image_urls"):
-                        listing_data["image_urls"] = detail_data["image_urls"]
-                    db.upsert_listing(listing_data, conn=conn)
-
-    # Mark listings not seen
-    db.increment_missed_runs(all_seen_ids, conn=conn)
-
-    db.finish_scrape_run(
-        run_id, total_found, total_new, total_price_changes, total_errors, conn=conn
-    )
-    conn.close()
-
-    click.echo(f"\nDone! Found: {total_found}, New: {total_new}, "
-               f"Price changes: {total_price_changes}, Errors: {total_errors}")
+    click.echo(f"\nDone! Found: {result['found']}, New: {result['new']}, "
+               f"Price changes: {result['price_changes']}, Errors: {result['errors']}")
 
 
 @cli.command()
@@ -180,12 +85,14 @@ def stats():
 
 @cli.command()
 @click.option("--port", default=5000, help="Port to serve on")
-@click.option("--debug/--no-debug", default=True)
-def serve(port, debug):
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--reload/--no-reload", default=True, help="Enable auto-reload")
+def serve(port, host, reload):
     """Start the web dashboard."""
-    from app import app
-    click.echo(f"Starting dashboard on http://localhost:{port}")
-    app.run(debug=debug, port=port)
+    import uvicorn
+    click.echo(f"Starting dashboard on http://{host}:{port}")
+    click.echo(f"API docs at http://{host}:{port}/docs")
+    uvicorn.run("app:app", host=host, port=port, reload=reload)
 
 
 if __name__ == "__main__":

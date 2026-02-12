@@ -2,6 +2,28 @@
 {% block title %}Listings - 3DP Deal Tracker{% endblock %}
 
 {% block content %}
+<!-- Scheduler status bar -->
+{% if scheduler %}
+<div class="alert alert-sm py-1 px-3 mb-3 d-flex align-items-center gap-3
+            {% if scheduler.running %}alert-success{% else %}alert-secondary{% endif %}" style="font-size: 0.85rem;">
+    <span>
+        Scheduler: <strong>{{ "Running" if scheduler.running else "Stopped" }}</strong>
+    </span>
+    {% if scheduler.running and scheduler.next_run %}
+    <span>Next scrape: {{ scheduler.next_run[:19] }}</span>
+    {% endif %}
+    {% if scheduler.scraping %}
+    <span class="badge bg-warning text-dark">Scraping now...</span>
+    {% endif %}
+    {% if scheduler.last_result %}
+    <span class="text-muted">
+        Last: {{ scheduler.last_result.found }} found, {{ scheduler.last_result.new }} new,
+        {{ scheduler.last_result.price_changes }} price changes
+    </span>
+    {% endif %}
+</div>
+{% endif %}
+
 <div class="row">
     <!-- Filters sidebar -->
     <div class="col-md-3 col-lg-2">

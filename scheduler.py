@@ -1,0 +1,200 @@
+"""Background scheduler and shared scrape logic."""
+
+import logging
+import threading
+from datetime import datetime, timezone
+from typing import Optional
+
+from apscheduler.schedulers.background import BackgroundScheduler
+
+import db
+from scraper import KijijiScraper
+from tracker import detect_brand, detect_model, lookup_msrp
+
+logger = logging.getLogger(__name__)
+
+_scheduler: Optional[BackgroundScheduler] = None
+_lock = threading.Lock()
+_last_result: Optional[dict] = None
+_is_running = False
+
+
+def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = None) -> dict:
+    """Run a full scrape cycle. Shared between CLI and scheduler.
+
+    Returns a summary dict with counts.
+    """
+    global _last_result, _is_running
+
+    if _is_running:
+        return {"error": "Scrape already in progress"}
+
+    _is_running = True
+    try:
+        conn = db.get_conn()
+
+        # Read settings from DB
+        settings = db.get_all_settings(conn)
+        if max_pages is None:
+            max_pages = settings.get("max_pages_per_query", 5)
+        delay_min = settings.get("request_delay_min", 2.0)
+        delay_max = settings.get("request_delay_max", 5.0)
+
+        scraper = KijijiScraper(delay_min=delay_min, delay_max=delay_max, max_pages=max_pages)
+
+        # Get enabled search queries from DB
+        queries = db.get_search_queries(enabled_only=True, conn=conn)
+        if query_filter:
+            queries = [q for q in queries if q["label"] == query_filter]
+
+        total_found = 0
+        total_new = 0
+        total_price_changes = 0
+        total_errors = 0
+        all_seen_ids = set()
+
+        run_id = db.start_scrape_run(
+            search_query=", ".join(q["label"] for q in queries),
+            conn=conn,
+        )
+        now = datetime.now(timezone.utc).isoformat()
+
+        for q in queries:
+            logger.info(f"Searching: {q['label']} ...")
+            try:
+                listings = scraper.scrape_search(q["url"], max_pages=max_pages)
+            except Exception as e:
+                logger.error(f"Error scraping {q['label']}: {e}")
+                total_errors += 1
+                continue
+
+            logger.info(f"  Found {len(listings)} listings")
+            total_found += len(listings)
+
+            for listing in listings:
+                all_seen_ids.add(listing.kijiji_id)
+
+                brand = detect_brand(listing.title, listing.description or "")
+                model = detect_model(listing.title, listing.description or "", brand)
+                msrp = lookup_msrp(brand, model)
+
+                existing = db.get_listing(listing.kijiji_id, conn=conn)
+                if existing and existing["current_price"] is not None and listing.price is not None:
+                    if existing["current_price"] != listing.price:
+                        total_price_changes += 1
+                        direction = "down" if listing.price < existing["current_price"] else "up"
+                        logger.info(
+                            f"  Price {direction}: {listing.title[:50]} "
+                            f"${existing['current_price']:.0f} -> ${listing.price:.0f}"
+                        )
+
+                listing_data = {
+                    "kijiji_id": listing.kijiji_id,
+                    "url": listing.url,
+                    "title": listing.title,
+                    "price": listing.price,
+                    "description": listing.description,
+                    "seller_name": listing.seller_name,
+                    "location": listing.location,
+                    "listing_date": listing.listing_date,
+                    "image_urls": listing.image_urls,
+                    "brand": brand,
+                    "model": model,
+                    "msrp": msrp,
+                }
+
+                is_new = db.upsert_listing(listing_data, conn=conn)
+                if is_new:
+                    total_new += 1
+
+                db.add_price_snapshot(listing.kijiji_id, listing.price, now, conn=conn)
+
+        db.increment_missed_runs(all_seen_ids, conn=conn)
+        db.finish_scrape_run(run_id, total_found, total_new, total_price_changes, total_errors, conn=conn)
+        conn.close()
+
+        result = {
+            "found": total_found,
+            "new": total_new,
+            "price_changes": total_price_changes,
+            "errors": total_errors,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }
+        _last_result = result
+        logger.info(f"Scrape done: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Scrape failed: {e}")
+        return {"error": str(e)}
+    finally:
+        _is_running = False
+
+
+def _scrape_job():
+    """APScheduler job wrapper."""
+    logger.info("Scheduled scrape starting...")
+    run_scrape()
+
+
+def start_scheduler(interval_hours: Optional[float] = None):
+    """Start the background scheduler."""
+    global _scheduler
+
+    with _lock:
+        if _scheduler and _scheduler.running:
+            _scheduler.shutdown(wait=False)
+
+        if interval_hours is None:
+            interval_hours = db.get_setting("scrape_interval_hours", 6)
+
+        _scheduler = BackgroundScheduler()
+        _scheduler.add_job(
+            _scrape_job,
+            "interval",
+            hours=interval_hours,
+            id="scrape_job",
+            replace_existing=True,
+        )
+        _scheduler.start()
+        db.set_setting("scheduler_enabled", True)
+        logger.info(f"Scheduler started: scraping every {interval_hours}h")
+
+
+def stop_scheduler():
+    """Stop the background scheduler."""
+    global _scheduler
+
+    with _lock:
+        if _scheduler and _scheduler.running:
+            _scheduler.shutdown(wait=False)
+            _scheduler = None
+        db.set_setting("scheduler_enabled", False)
+        logger.info("Scheduler stopped")
+
+
+def trigger_now():
+    """Trigger an immediate scrape (runs in a background thread)."""
+    thread = threading.Thread(target=run_scrape, daemon=True)
+    thread.start()
+    return {"status": "triggered"}
+
+
+def get_status() -> dict:
+    """Get scheduler status."""
+    running = _scheduler is not None and _scheduler.running if _scheduler else False
+
+    status = {
+        "running": running,
+        "scraping": _is_running,
+        "last_result": _last_result,
+    }
+
+    if running and _scheduler:
+        job = _scheduler.get_job("scrape_job")
+        if job and job.next_run_time:
+            status["next_run"] = job.next_run_time.isoformat()
+        interval = db.get_setting("scrape_interval_hours", 6)
+        status["interval_hours"] = interval
+
+    return status
