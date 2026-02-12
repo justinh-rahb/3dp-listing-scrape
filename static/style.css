@@ -8,3 +8,17 @@
 .table td, .table th {
     vertical-align: middle;
 }
+
+#themeToggle {
+    width: 34px;
+    height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.nav-icon-link {
+    display: inline-flex;
+    align-items: center;
+}
