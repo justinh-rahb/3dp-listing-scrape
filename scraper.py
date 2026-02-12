@@ -6,7 +6,7 @@ import random
 import re
 import time
 from typing import Optional
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -111,49 +111,71 @@ class KijijiScraper:
         # Navigate common Next.js data structures
         props = data.get("props", {}).get("pageProps", {})
 
-        # Try different paths where listings might be
-        listing_data = None
-        for key in ["listings", "ads", "results", "searchResults"]:
-            if key in props:
-                listing_data = props[key]
-                break
+        for listing_data in self._find_listing_collections(props):
+            for item in listing_data:
+                try:
+                    listing = self._extract_from_json_item(item)
+                    if listing:
+                        listings.append(listing)
+                except Exception as e:
+                    logger.debug(f"Failed to parse JSON listing item: {e}")
+                    continue
 
-        # Also check nested structures
-        if listing_data is None:
-            for key in props:
-                val = props[key]
-                if isinstance(val, dict):
-                    for subkey in ["listings", "ads", "results"]:
-                        if subkey in val:
-                            listing_data = val[subkey]
-                            break
-                if listing_data:
-                    break
+        # Deduplicate in case multiple collections include the same listing.
+        deduped = []
+        seen_ids = set()
+        for listing in listings:
+            if listing.kijiji_id not in seen_ids:
+                seen_ids.add(listing.kijiji_id)
+                deduped.append(listing)
 
-        if not listing_data:
-            return []
+        return deduped
 
-        # Handle both list and dict-with-list structures
-        if isinstance(listing_data, dict) and "data" in listing_data:
-            listing_data = listing_data["data"]
-        if not isinstance(listing_data, list):
-            return []
+    def _find_listing_collections(self, node) -> list[list[dict]]:
+        """Find all list-like collections that look like listing result sets."""
+        found = []
 
-        for item in listing_data:
-            try:
-                listing = self._extract_from_json_item(item)
-                if listing:
-                    listings.append(listing)
-            except Exception as e:
-                logger.debug(f"Failed to parse JSON listing item: {e}")
+        if isinstance(node, dict):
+            # Common wrappers seen in Next.js payloads.
+            for key in ("listings", "ads", "results", "searchResults", "items", "data"):
+                value = node.get(key)
+                if self._looks_like_listing_collection(value):
+                    found.append(value)
+            for value in node.values():
+                found.extend(self._find_listing_collections(value))
+        elif isinstance(node, list):
+            # Sometimes listing collections are nested directly in arrays.
+            if self._looks_like_listing_collection(node):
+                found.append(node)
+            for value in node:
+                found.extend(self._find_listing_collections(value))
+
+        return found
+
+    def _looks_like_listing_collection(self, value) -> bool:
+        if not isinstance(value, list) or not value:
+            return False
+        sample = [v for v in value[:8] if isinstance(v, dict)]
+        if not sample:
+            return False
+        id_keys = ("id", "adId", "listingId")
+        title_keys = ("title", "name")
+        url_keys = ("url", "seoUrl", "href")
+        hits = 0
+        for item in sample:
+            if any(item.get(k) for k in id_keys) and any(item.get(k) for k in title_keys):
+                hits += 1
                 continue
-
-        return listings
+            if any(item.get(k) for k in url_keys) and any(item.get(k) for k in title_keys):
+                hits += 1
+        return hits >= max(1, len(sample) // 2)
 
     def _extract_from_json_item(self, item: dict) -> Optional[ScrapedListing]:
         """Extract a ScrapedListing from a JSON listing object."""
         # Try common field names
         kijiji_id = str(item.get("id", item.get("adId", item.get("listingId", ""))))
+        if not kijiji_id:
+            kijiji_id = self._extract_kijiji_id(item.get("url", item.get("seoUrl", item.get("href", ""))))
         if not kijiji_id:
             return None
 
@@ -230,8 +252,17 @@ class KijijiScraper:
         """Parse listings from HTML when __NEXT_DATA__ is not available."""
         listings = []
 
-        # Find listing links by URL pattern: /v-{category}/.../{numeric_id}
-        listing_links = soup.find_all("a", href=re.compile(r"/v-[^/]+/[^/]+/\d+"))
+        listing_links = []
+        for link in soup.find_all("a", href=True):
+            href = link.get("href", "")
+            if not href:
+                continue
+            if self._extract_kijiji_id(href):
+                listing_links.append(link)
+                continue
+            data_testid = (link.get("data-testid") or "").lower()
+            if "listing" in data_testid and "title" in data_testid:
+                listing_links.append(link)
 
         # Deduplicate by href (same listing can appear in multiple link elements)
         seen_hrefs = set()
@@ -259,13 +290,11 @@ class KijijiScraper:
         if not href:
             return None
 
-        # Extract ID from URL
-        match = re.search(r"/(\d+)$", href.rstrip("/"))
-        if not match:
+        kijiji_id = self._extract_kijiji_id(href)
+        if not kijiji_id:
             return None
-        kijiji_id = match.group(1)
 
-        url = f"https://www.kijiji.ca{href}" if href.startswith("/") else href
+        url = urljoin("https://www.kijiji.ca", href)
 
         # Walk up to find the card container
         card = link_element
@@ -304,6 +333,28 @@ class KijijiScraper:
             location=location,
             image_urls=image_urls,
         )
+
+    def _extract_kijiji_id(self, href: str) -> Optional[str]:
+        """Extract listing ID from known Kijiji URL patterns."""
+        if not href:
+            return None
+
+        candidate = href.strip()
+        # /v-.../.../1234567890 or /vip/1234567890
+        direct = re.search(r"/(\d{6,})(?:$|[/?#])", candidate)
+        if direct:
+            return direct.group(1)
+
+        # /v-view-details.html?adId=1234567890
+        parsed = urlparse(candidate)
+        query = parse_qs(parsed.query)
+        for key in ("adId", "adid", "listingId", "id"):
+            values = query.get(key)
+            if values:
+                value = values[0]
+                if re.fullmatch(r"\d{6,}", value):
+                    return value
+        return None
 
     def _extract_price_from_element(self, element) -> Optional[float]:
         """Extract price from a DOM element."""
