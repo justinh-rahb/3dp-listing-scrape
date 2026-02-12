@@ -123,6 +123,14 @@ def serve(port, host, reload, workers):
 
 
 @cli.command()
+@click.option("--port", default=5000, help="Port to serve on")
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+def dev(port, host):
+    """Start the web dashboard in development mode (auto-reload on)."""
+    run_server(host=host, port=port, reload=True, workers=1)
+
+
+@cli.command()
 def update_retail_prices():
     """Update retail prices from Aurora Tech Channel."""
     from aurora_scraper import update_retail_prices_from_aurora
