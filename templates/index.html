@@ -71,6 +71,7 @@
             </div>
 
             <div class="mb-2 form-check">
+                <input type="hidden" name="active_only" value="0">
                 <input type="checkbox" name="active_only" value="1" class="form-check-input" id="activeOnly"
                        {% if filters.active_only %}checked{% endif %}>
                 <label class="form-check-label" for="activeOnly">Active only</label>
