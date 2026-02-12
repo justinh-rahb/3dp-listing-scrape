@@ -95,5 +95,19 @@ def serve(port, host, reload):
     uvicorn.run("app:app", host=host, port=port, reload=reload)
 
 
+@cli.command()
+def update_retail_prices():
+    """Update retail prices from Aurora Tech Channel."""
+    from aurora_scraper import update_retail_prices_from_aurora
+    
+    click.echo("Fetching current retail prices from Aurora Tech Channel...")
+    try:
+        update_retail_prices_from_aurora(delay=1.0)
+        click.echo("✓ Retail prices updated successfully!")
+    except Exception as e:
+        click.echo(f"✗ Error updating retail prices: {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()

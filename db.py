@@ -78,11 +78,13 @@ def init_db(db_path: str = DB_PATH):
         );
 
         CREATE TABLE IF NOT EXISTS msrp_entries (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            brand     TEXT NOT NULL,
-            model     TEXT NOT NULL,
-            msrp_cad  REAL NOT NULL,
-            msrp_usd  REAL,
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            brand         TEXT NOT NULL,
+            model         TEXT NOT NULL,
+            msrp_cad      REAL NOT NULL,
+            msrp_usd      REAL,
+            retail_price  REAL,
+            last_updated  TEXT,
             UNIQUE(brand, model)
         );
 
@@ -309,15 +311,25 @@ def get_msrp_entries(conn: Optional[sqlite3.Connection] = None) -> list[dict]:
 
 def upsert_msrp_entry(brand: str, model: str, msrp_cad: float,
                       msrp_usd: Optional[float] = None,
+                      retail_price: Optional[float] = None,
                       conn: Optional[sqlite3.Connection] = None) -> int:
     close = conn is None
     if close:
         conn = get_conn()
+    
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    
     cursor = conn.execute("""
-        INSERT INTO msrp_entries (brand, model, msrp_cad, msrp_usd)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(brand, model) DO UPDATE SET msrp_cad = ?, msrp_usd = ?
-    """, (brand.lower(), model, msrp_cad, msrp_usd, msrp_cad, msrp_usd))
+        INSERT INTO msrp_entries (brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(brand, model) DO UPDATE SET 
+            msrp_cad = ?,
+            msrp_usd = ?,
+            retail_price = ?,
+            last_updated = ?
+    """, (brand.lower(), model, msrp_cad, msrp_usd, retail_price, now,
+           msrp_cad, msrp_usd, retail_price, now))
     conn.commit()
     eid = cursor.lastrowid
     if close:
@@ -336,12 +348,16 @@ def delete_msrp_entry(entry_id: int, conn: Optional[sqlite3.Connection] = None):
 
 
 def get_msrp_map(conn: Optional[sqlite3.Connection] = None) -> dict:
-    """Return MSRP data as {brand: {model: {msrp_cad, msrp_usd}}} for tracker use."""
+    """Return MSRP data as {brand: {model: {msrp_cad, msrp_usd, retail_price}}} for tracker use."""
     entries = get_msrp_entries(conn)
     result = {}
     for e in entries:
         brand = result.setdefault(e["brand"], {})
-        brand[e["model"]] = {"msrp_cad": e["msrp_cad"], "msrp_usd": e["msrp_usd"]}
+        brand[e["model"]] = {
+            "msrp_cad": e["msrp_cad"],
+            "msrp_usd": e["msrp_usd"],
+            "retail_price": e.get("retail_price")
+        }
     return result
 
 

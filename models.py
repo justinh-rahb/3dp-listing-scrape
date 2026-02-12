@@ -31,7 +31,10 @@ class Deal:
     days_on_market: int
     brand: Optional[str] = None
     msrp: Optional[float] = None
+    retail_price: Optional[float] = None
     price_to_msrp_ratio: Optional[float] = None
+    price_to_retail_ratio: Optional[float] = None
+    vs_retail_savings: Optional[float] = None
     last_drop_date: Optional[str] = None
     location: Optional[str] = None
     image_url: Optional[str] = None

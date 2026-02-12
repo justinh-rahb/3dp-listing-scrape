@@ -27,6 +27,18 @@
                     </span>
                     {% endif %}
 
+                    {% if deal.vs_retail_savings is not none and deal.vs_retail_savings > 0 %}
+                    <span class="badge bg-primary">
+                        ${{ "%.0f"|format(deal.vs_retail_savings) }} below retail
+                    </span>
+                    {% endif %}
+
+                    {% if deal.price_to_retail_ratio is not none %}
+                    <span class="badge {% if deal.price_to_retail_ratio < 0.7 %}bg-info{% else %}bg-secondary{% endif %}">
+                        {{ "%.0f"|format(deal.price_to_retail_ratio * 100) }}% of retail
+                    </span>
+                    {% endif %}
+
                     {% if deal.price_to_msrp_ratio is not none %}
                     <span class="badge {% if deal.price_to_msrp_ratio < 0.5 %}bg-info{% else %}bg-secondary{% endif %}">
                         {{ "%.0f"|format(deal.price_to_msrp_ratio * 100) }}% MSRP

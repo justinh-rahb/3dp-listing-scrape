@@ -31,14 +31,14 @@ DEFAULT_SETTINGS = {
 }
 
 DEFAULT_SEARCH_QUERIES = [
-    {"url": "https://www.kijiji.ca/b-canada/3d-printer/k0l0", "label": "3d printer"},
-    {"url": "https://www.kijiji.ca/b-canada/3d-printing/k0l0", "label": "3d printing"},
-    {"url": "https://www.kijiji.ca/b-canada/bambu-lab/k0l0", "label": "bambu lab"},
-    {"url": "https://www.kijiji.ca/b-canada/prusa/k0l0", "label": "prusa"},
-    {"url": "https://www.kijiji.ca/b-canada/creality/k0l0", "label": "creality"},
-    {"url": "https://www.kijiji.ca/b-canada/ender-3/k0l0", "label": "ender 3"},
-    {"url": "https://www.kijiji.ca/b-canada/anycubic/k0l0", "label": "anycubic"},
-    {"url": "https://www.kijiji.ca/b-canada/voron/k0l0", "label": "voron"},
+    {"url": "https://www.kijiji.ca/b-hamilton/3d-printer/k0l80014", "label": "3d printer"},
+    {"url": "https://www.kijiji.ca/b-hamilton/3d-printing/k0l80014", "label": "3d printing"},
+    {"url": "https://www.kijiji.ca/b-hamilton/bambu-lab/k0l80014", "label": "bambu lab"},
+    {"url": "https://www.kijiji.ca/b-hamilton/prusa/k0l80014", "label": "prusa"},
+    {"url": "https://www.kijiji.ca/b-hamilton/creality/k0l80014", "label": "creality"},
+    {"url": "https://www.kijiji.ca/b-hamilton/ender-3/k0l80014", "label": "ender 3"},
+    {"url": "https://www.kijiji.ca/b-hamilton/anycubic/k0l80014", "label": "anycubic"},
+    {"url": "https://www.kijiji.ca/b-hamilton/voron/k0l80014", "label": "voron"},
 ]
 
 DEFAULT_BRAND_KEYWORDS = {
