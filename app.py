@@ -24,8 +24,11 @@ async def lifespan(app: FastAPI):
     db.init_db()
     if db.get_setting("scheduler_enabled", False):
         scheduler.start_scheduler()
+        stats = db.get_stats()
+        if stats["total_scrape_runs"] == 0:
+            scheduler.trigger_now()
     yield
-    scheduler.stop_scheduler()
+    scheduler.stop_scheduler(disable=False)
 
 
 app = FastAPI(title="3DP Deal Tracker", lifespan=lifespan)

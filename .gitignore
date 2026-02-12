@@ -134,3 +134,5 @@ dmypy.json
 Thumbs.db
 
 listings.db
+*.db-wal
+*.db-shm

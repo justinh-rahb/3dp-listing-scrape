@@ -2,6 +2,7 @@
 """CLI for the 3D Printer Kijiji Deal Tracker."""
 
 import logging
+import os
 import sys
 
 import click
@@ -11,9 +12,33 @@ from scheduler import run_scrape
 from tracker import compute_deals
 
 
-@click.group()
+def _as_bool(value: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+DEFAULT_HOST = os.environ.get("HOST", "0.0.0.0")
+DEFAULT_PORT = int(os.environ.get("PORT", "5000"))
+DEFAULT_RELOAD = _as_bool(os.environ.get("RELOAD"), default=False)
+DEFAULT_WORKERS = int(os.environ.get("WORKERS", "1"))
+
+
+def run_server(host: str, port: int, reload: bool, workers: int):
+    import uvicorn
+
+    if reload and workers > 1:
+        workers = 1
+
+    click.echo(f"Starting dashboard on http://{host}:{port}")
+    click.echo(f"API docs at http://{host}:{port}/docs")
+    uvicorn.run("app:app", host=host, port=port, reload=reload, workers=workers)
+
+
+@click.group(invoke_without_command=True)
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-def cli(verbose):
+@click.pass_context
+def cli(ctx, verbose):
     """3D Printer Kijiji Deal Tracker"""
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
@@ -22,6 +47,10 @@ def cli(verbose):
         datefmt="%H:%M:%S",
     )
     db.init_db()
+
+    # Server-first UX: running without a subcommand starts the dashboard.
+    if ctx.invoked_subcommand is None:
+        run_server(host=DEFAULT_HOST, port=DEFAULT_PORT, reload=DEFAULT_RELOAD, workers=DEFAULT_WORKERS)
 
 
 @cli.command()
@@ -84,15 +113,13 @@ def stats():
 
 
 @cli.command()
-@click.option("--port", default=5000, help="Port to serve on")
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--reload/--no-reload", default=True, help="Enable auto-reload")
-def serve(port, host, reload):
+@click.option("--port", default=DEFAULT_PORT, help="Port to serve on")
+@click.option("--host", default=DEFAULT_HOST, help="Host to bind to")
+@click.option("--reload/--no-reload", default=DEFAULT_RELOAD, help="Enable auto-reload")
+@click.option("--workers", default=DEFAULT_WORKERS, type=int, help="Number of worker processes")
+def serve(port, host, reload, workers):
     """Start the web dashboard."""
-    import uvicorn
-    click.echo(f"Starting dashboard on http://{host}:{port}")
-    click.echo(f"API docs at http://{host}:{port}/docs")
-    uvicorn.run("app:app", host=host, port=port, reload=reload)
+    run_server(host=host, port=port, reload=reload, workers=workers)
 
 
 @cli.command()

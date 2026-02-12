@@ -27,7 +27,8 @@ DEFAULT_SETTINGS = {
     "request_delay_min": 2.0,
     "request_delay_max": 5.0,
     "inactive_threshold": 3,
-    "scheduler_enabled": False,
+    # Production-friendly default: start scheduler automatically with the server.
+    "scheduler_enabled": True,
 }
 
 DEFAULT_SEARCH_QUERIES = [

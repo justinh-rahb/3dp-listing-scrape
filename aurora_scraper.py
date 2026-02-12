@@ -1,18 +1,35 @@
 """Scraper for Aurora Tech Channel price data.
 
+NOTE: Aurora Tech Channel integration is currently disabled due to HTML parsing complexity.
+This module is kept for future enhancement. For now, use the static msrp_data.json file.
+
 Fetches current MSRP and retail sale prices from auroratechchannel.com.
 """
 
 import logging
-import re
-import time
-from typing import Optional
-from urllib.parse import urljoin, parse_qs, urlparse
-
-import requests
-from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+
+def update_retail_prices_from_aurora(delay: float = 1.0, usd_to_cad_rate: float = 1.35):
+    """
+    Aurora Tech Channel scraping is currently disabled.
+    
+    The website's HTML structure is complex and changes frequently.
+    For now, manually update msrp_data.json with current prices.
+    
+    Future enhancement: Implement proper API or more robust scraping.
+    """
+    logger.warning("Aurora Tech Channel integration is currently disabled")
+    logger.info("To update prices, manually edit msrp_data.json")
+    logger.info("Run 'python cli.py' after updating to reload database")
+    return
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logger.info("Aurora Tech Channel scraper is currently disabled")
+    logger.info("Please update msrp_data.json manually for now")
 
 
 class AuroraScraper:
@@ -38,6 +55,15 @@ class AuroraScraper:
         except (ValueError, TypeError):
             return None
     
+    def _normalize_model_name(self, model: str) -> str:
+        """Normalize model names to handle variations like 'Ender-3' vs 'Ender 3'."""
+        if not model:
+            return model
+        # Standardize hyphens in common patterns
+        model = re.sub(r'Ender-3', 'Ender 3', model)
+        model = re.sub(r'Ender-5', 'Ender 5', model)
+        return model
+    
     def _extract_brand_model(self, link_element) -> tuple[Optional[str], Optional[str]]:
         """Extract brand and model from a price history link."""
         href = link_element.get('href', '')
@@ -50,6 +76,10 @@ class AuroraScraper:
         
         brand = params.get('brand', [None])[0]
         model = params.get('model', [None])[0]
+        
+        # Normalize model name
+        if model:
+            model = self._normalize_model_name(model)
         
         return brand, model
     
@@ -90,37 +120,40 @@ class AuroraScraper:
                     continue
                 seen.add(key)
                 
-                # Find the parent container with price info
-                container = link.find_parent(['div', 'section'])
+                # Find the immediate parent that contains just this item's prices
+                # Look for the closest wrapper div/container
+                container = link.find_parent()
                 if not container:
                     continue
                 
-                # Look for price information in the container
-                # Prices are typically shown as: $MSRP$CurrentPrice
-                price_text = container.get_text()
+                # Get text from just the direct siblings, not nested elements
+                # The format on Aurora is: BrandModel $MSRP$CurrentPrice
+                siblings_text = ''.join([str(s) for s in container.next_siblings if isinstance(s, str)])
+                price_text = link.get_text() + siblings_text
                 
-                # Extract prices using regex
-                # Pattern: finds prices like $1,999.00$1,499.00
-                price_matches = re.findall(r'\$[\d,]+\.?\d*', price_text)
+                # More specific pattern: consecutive prices like $1,999.00$1,499.00
+                # Use a tighter pattern to avoid picking up unrelated prices
+                price_pattern = r'\$([\d,]+(?:\.\d{2})?)\s*\$([\d,]+(?:\.\d{2})?)'  
+                match = re.search(price_pattern, price_text)
                 
-                if len(price_matches) >= 2:
-                    msrp = self._parse_price(price_matches[0])
-                    current_price = self._parse_price(price_matches[1])
+                if match:
+                    msrp = self._parse_price(match.group(1))
+                    current_price = self._parse_price(match.group(2))
                     
-                    if msrp and current_price:
+                    if msrp and current_price and msrp >= current_price:  # Sanity check
                         price_drop = msrp - current_price
                         drop_pct = (price_drop / msrp * 100) if msrp > 0 else 0
                         
                         results.append({
                             'brand': brand,
                             'model': model,
-                            'msrp': msrp,
-                            'current_price': current_price,
+                            'msrp_usd': msrp,  # Aurora shows USD prices
+                            'current_price_usd': current_price,  # Current retail in USD
                             'price_drop': price_drop,
                             'drop_percentage': drop_pct
                         })
                         
-                        logger.debug(f"Found: {brand} {model} - MSRP: ${msrp}, Current: ${current_price}")
+                        logger.debug(f"Found: {brand} {model} - MSRP: ${msrp:.0f}, Current: ${current_price:.0f}")
                 
             except Exception as e:
                 logger.debug(f"Error parsing price item: {e}")
@@ -138,21 +171,21 @@ class AuroraScraper:
             model: Model name (e.g., 'P1S', 'MK4S')
         
         Returns:
-            Dict with msrp and current_price, or None if not found
+            Dict with msrp_usd and current_price_usd, or None if not found
         """
         all_prices = self.scrape_fdm_prices()
         
         brand_lower = brand.lower()
-        model_lower = model.lower()
+        model_normalized = self._normalize_model_name(model).lower()
         
         for item in all_prices:
             if (item['brand'].lower() == brand_lower and 
-                item['model'].lower() == model_lower):
+                self._normalize_model_name(item['model']).lower() == model_normalized):
                 return {
                     'brand': item['brand'],
                     'model': item['model'],
-                    'msrp': item['msrp'],
-                    'current_price': item['current_price'],
+                    'msrp_usd': item['msrp_usd'],
+                    'current_price_usd': item['current_price_usd'],
                     'price_drop': item['price_drop'],
                     'drop_percentage': item['drop_percentage']
                 }
@@ -160,17 +193,19 @@ class AuroraScraper:
         return None
 
 
-def update_retail_prices_from_aurora(delay: float = 1.0):
+def update_retail_prices_from_aurora(delay: float = 1.0, usd_to_cad_rate: float = 1.35):
     """
     Scrape Aurora Tech Channel and update the database with retail prices.
     
     Args:
         delay: Delay in seconds between operations (be respectful)
+        usd_to_cad_rate: USD to CAD conversion rate (default: 1.35)
     """
     import db
     
     scraper = AuroraScraper()
     logger.info("Starting Aurora Tech Channel price update...")
+    logger.info(f"Using USD to CAD conversion rate: {usd_to_cad_rate}")
     
     time.sleep(delay)  # Be respectful
     prices = scraper.scrape_fdm_prices()
@@ -181,21 +216,46 @@ def update_retail_prices_from_aurora(delay: float = 1.0):
     
     conn = db.get_conn()
     updated = 0
+    skipped = 0
     
     try:
         for item in prices:
-            # Update or insert retail price information
-            db.upsert_msrp_entry(
-                brand=item['brand'],
-                model=item['model'],
-                msrp_cad=item['msrp'],
-                msrp_usd=None,  # Aurora shows USD prices, we'll use them as CAD for now
-                retail_price=item['current_price'],
-                conn=conn
-            )
-            updated += 1
+            # Convert USD prices to CAD
+            msrp_usd = item['msrp_usd']
+            retail_price_usd = item['current_price_usd']
+            retail_price_cad = retail_price_usd * usd_to_cad_rate
+            
+            # Check if entry exists - only update if we have it already
+            existing = conn.execute(
+                "SELECT msrp_cad, msrp_usd FROM msrp_entries WHERE brand = ? AND model = ?",
+                (item['brand'].lower(), item['model'])
+            ).fetchone()
+            
+            if existing:
+                # Update only retail price and msrp_usd, keep existing msrp_cad
+                db.upsert_msrp_entry(
+                    brand=item['brand'],
+                    model=item['model'],
+                    msrp_cad=existing['msrp_cad'],  # Keep existing CAD MSRP
+                    msrp_usd=msrp_usd,  # Update USD MSRP from Aurora
+                    retail_price=retail_price_cad,  # Current retail converted to CAD
+                    conn=conn
+                )
+                updated += 1
+            else:
+                # New entry - use Aurora USD price converted to CAD
+                db.upsert_msrp_entry(
+                    brand=item['brand'],
+                    model=item['model'],
+                    msrp_cad=msrp_usd * usd_to_cad_rate,  # Convert USD to CAD
+                    msrp_usd=msrp_usd,
+                    retail_price=retail_price_cad,
+                    conn=conn
+                )
+                updated += 1
+                logger.debug(f"Added new model: {item['brand']} {item['model']}")
         
-        logger.info(f"Updated {updated} retail prices from Aurora Tech Channel")
+        logger.info(f"Updated {updated} models from Aurora Tech Channel")
     finally:
         conn.close()
 
@@ -210,7 +270,7 @@ if __name__ == "__main__":
     print(f"\nFound {len(prices)} printers with pricing:\n")
     for item in prices[:10]:  # Show first 10
         print(f"{item['brand']} {item['model']}")
-        print(f"  MSRP: ${item['msrp']:.0f}")
-        print(f"  Current: ${item['current_price']:.0f}")
+        print(f"  MSRP: ${item['msrp_usd']:.0f} USD")
+        print(f"  Current: ${item['current_price_usd']:.0f} USD")
         print(f"  Drop: ${item['price_drop']:.0f} ({item['drop_percentage']:.1f}%)")
         print()

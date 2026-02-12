@@ -161,15 +161,20 @@ def start_scheduler(interval_hours: Optional[float] = None):
         logger.info(f"Scheduler started: scraping every {interval_hours}h")
 
 
-def stop_scheduler():
-    """Stop the background scheduler."""
+def stop_scheduler(disable: bool = True):
+    """Stop the background scheduler.
+
+    Set disable=False to stop only in-memory scheduling without changing the
+    persisted scheduler setting.
+    """
     global _scheduler
 
     with _lock:
         if _scheduler and _scheduler.running:
             _scheduler.shutdown(wait=False)
             _scheduler = None
-        db.set_setting("scheduler_enabled", False)
+        if disable:
+            db.set_setting("scheduler_enabled", False)
         logger.info("Scheduler stopped")
 
 

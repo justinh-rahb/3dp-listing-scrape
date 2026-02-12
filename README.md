@@ -43,6 +43,17 @@ Track 3D printer listings on Kijiji (Hamilton area) and automatically detect pri
 
 ### Command Line
 
+**Run the server (default behavior)**:
+```bash
+python cli.py
+```
+Then visit http://127.0.0.1:5000
+
+**Run the server (explicit command)**:
+```bash
+python cli.py serve --host 0.0.0.0 --port 5000 --workers 1
+```
+
 **Run a scrape**:
 ```bash
 python cli.py scrape
@@ -63,11 +74,27 @@ python cli.py update-retail-prices
 python cli.py stats
 ```
 
-**Start the web dashboard**:
+**Start the server using production entrypoint**:
 ```bash
-python cli.py serve
+python server.py
 ```
-Then visit http://127.0.0.1:5000
+
+### Docker / Compose
+
+**Build and run with Docker Compose**:
+```bash
+docker compose up --build -d
+```
+
+**View logs**:
+```bash
+docker compose logs -f tracker
+```
+
+**Stop**:
+```bash
+docker compose down
+```
 
 ### Web Dashboard
 
@@ -100,21 +127,15 @@ Configure scraping behavior in Settings:
 - **Request Delay**: Random delay between requests (2-5 seconds)
 - **Inactive Threshold**: Missed runs before marking a listing inactive
 
-## Aurora Tech Channel Integration
+## Aurora Tech Channel Integration (Currently Disabled)
 
-This tracker integrates with [Aurora Tech Channel](https://auroratechchannel.com/) to get current retail prices and MSRPs for 3D printers.
+The Aurora Tech Channel integration has been temporarily disabled due to HTML parsing complexity. The website structure changes frequently, making reliable scraping difficult.
 
-**Benefits**:
-- Compare Kijiji prices against current retail sales, not just MSRP
-- Know when a used listing actually beats retail prices
-- Automatically updated price data from a trusted source
+**Current workaround**: Manually update [msrp_data.json](msrp_data.json) with current prices.
 
-**Update retail prices**:
-```bash
-python cli.py update-retail-prices
-```
+**Future enhancement**: Consider using an API or more robust scraping approach when available.
 
-Run this periodically (e.g., weekly) to keep retail prices current.
+Running `python cli.py update-retail-prices` will show a message that this feature is disabled.
 
 ## Deal Scoring
 
@@ -162,12 +183,8 @@ DEFAULT_BRAND_KEYWORDS = {
 
 ## Scheduled Scraping
 
-For automated scraping, set up a cron job or use the built-in scheduler:
-
-```bash
-# Run every 6 hours
-0 */6 * * * cd /path/to/3dp-listing-scrape && source venv/bin/activate && python cli.py scrape
-```
+The built-in scheduler now starts automatically with the server by default.
+Configure scrape interval in the Settings page (`scrape_interval_hours`).
 
 ## Notes
 
