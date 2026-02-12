@@ -77,6 +77,13 @@
                 <label class="form-check-label" for="activeOnly">Active only</label>
             </div>
 
+            <div class="mb-2 form-check">
+                <input type="hidden" name="show_hidden" value="0">
+                <input type="checkbox" name="show_hidden" value="1" class="form-check-input" id="showHidden"
+                       {% if filters.show_hidden %}checked{% endif %}>
+                <label class="form-check-label" for="showHidden">Show hidden</label>
+            </div>
+
             <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
             <a href="/" class="btn btn-outline-secondary btn-sm w-100 mt-1">Reset</a>
         </form>
@@ -112,6 +119,7 @@
                         <th>Brand</th>
                         <th>Location</th>
                         <th>First Seen</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -127,6 +135,9 @@
                             <a href="/listing/{{ listing.kijiji_id }}">{{ listing.title[:60] }}</a>
                             {% if not listing.is_active %}
                             <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                            {% if listing.is_hidden %}
+                            <span class="badge bg-dark">Hidden</span>
                             {% endif %}
                         </td>
                         <td>
@@ -149,6 +160,17 @@
                         <td>{{ (listing.brand or '')|title }}</td>
                         <td class="text-truncate" style="max-width: 150px;">{{ listing.location or '' }}</td>
                         <td>{{ (listing.first_seen or '')[:10] }}</td>
+                        <td class="text-end">
+                            {% if listing.is_hidden %}
+                            <form method="post" action="/listing/{{ listing.kijiji_id }}/unhide" class="d-inline">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm">Unhide</button>
+                            </form>
+                            {% else %}
+                            <form method="post" action="/listing/{{ listing.kijiji_id }}/hide" class="d-inline">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm">Hide</button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>

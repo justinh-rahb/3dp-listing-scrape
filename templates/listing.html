@@ -12,6 +12,17 @@
         </nav>
 
         <h4>{{ listing.title }}</h4>
+        <div class="mb-2">
+            {% if listing.is_hidden %}
+            <form method="post" action="/listing/{{ listing.kijiji_id }}/unhide" class="d-inline">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Unhide listing</button>
+            </form>
+            {% else %}
+            <form method="post" action="/listing/{{ listing.kijiji_id }}/hide" class="d-inline">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Hide listing</button>
+            </form>
+            {% endif %}
+        </div>
 
         <div class="d-flex gap-3 mb-3">
             {% if listing.current_price is not none %}
@@ -49,6 +60,7 @@
             <tr><td class="text-muted">Status</td><td>
                 {% if listing.is_active %}<span class="badge bg-success">Active</span>
                 {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+                {% if listing.is_hidden %}<span class="badge bg-dark">Hidden</span>{% endif %}
             </td></tr>
             <tr><td class="text-muted">Kijiji</td><td><a href="{{ listing.url }}" target="_blank">View on Kijiji</a></td></tr>
         </table>

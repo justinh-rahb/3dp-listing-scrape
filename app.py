@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -68,7 +68,7 @@ def parse_optional_float(value: Optional[str]) -> Optional[float]:
 async def index(request: Request, brand: Optional[str] = None,
                 min_price: Optional[str] = None, max_price: Optional[str] = None,
                 location: Optional[str] = None, search: Optional[str] = None,
-                active_only: str = "1", sort_by: str = "last_seen"):
+                active_only: str = "1", show_hidden: str = "0", sort_by: str = "last_seen"):
     min_price_value = parse_optional_float(min_price)
     max_price_value = parse_optional_float(max_price)
 
@@ -79,6 +79,7 @@ async def index(request: Request, brand: Optional[str] = None,
         "location": location,
         "search": search,
         "active_only": active_only == "1",
+        "show_hidden": show_hidden == "1",
         "sort_by": sort_by,
     }
     listings = db.get_listings(filters)
@@ -100,6 +101,18 @@ async def listing_detail(request: Request, kijiji_id: str):
     return templates.TemplateResponse("listing.html", {
         "request": request, "listing": listing, "price_history": price_history,
     })
+
+
+@app.post("/listing/{kijiji_id}/hide")
+async def hide_listing(request: Request, kijiji_id: str):
+    db.set_listing_hidden(kijiji_id, True)
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
+
+
+@app.post("/listing/{kijiji_id}/unhide")
+async def unhide_listing(request: Request, kijiji_id: str):
+    db.set_listing_hidden(kijiji_id, False)
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
 
 @app.get("/deals", response_class=HTMLResponse)
