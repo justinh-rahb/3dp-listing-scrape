@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ listing.title }} - 3DP Deal Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Listings</a></li>
+                <li class="breadcrumb-item active">{{ listing.title[:50] }}</li>
+            </ol>
+        </nav>
+
+        <h4>{{ listing.title }}</h4>
+
+        <div class="d-flex gap-3 mb-3">
+            {% if listing.current_price is not none %}
+            <h3 class="mb-0">${{ "%.0f"|format(listing.current_price) }}</h3>
+            {% else %}
+            <h3 class="mb-0">Contact for price</h3>
+            {% endif %}
+
+            {% if listing.original_price and listing.current_price and listing.original_price != listing.current_price %}
+                {% set drop = listing.original_price - listing.current_price %}
+                {% if drop > 0 %}
+                <span class="badge bg-success fs-6 align-self-center">
+                    -${{ "%.0f"|format(drop) }} ({{ "%.1f"|format(drop / listing.original_price * 100) }}% off)
+                </span>
+                {% endif %}
+            {% endif %}
+
+            {% if listing.msrp %}
+            <span class="badge bg-info fs-6 align-self-center">
+                MSRP: ${{ "%.0f"|format(listing.msrp) }}
+                ({{ "%.0f"|format(listing.current_price / listing.msrp * 100) }}%)
+            </span>
+            {% endif %}
+        </div>
+
+        <table class="table table-sm w-auto">
+            <tr><td class="text-muted">Brand</td><td>{{ (listing.brand or 'Unknown')|title }}</td></tr>
+            <tr><td class="text-muted">Model</td><td>{{ listing.model or 'Unknown' }}</td></tr>
+            <tr><td class="text-muted">Location</td><td>{{ listing.location or 'Unknown' }}</td></tr>
+            <tr><td class="text-muted">First seen</td><td>{{ (listing.first_seen or '')[:10] }}</td></tr>
+            <tr><td class="text-muted">Last seen</td><td>{{ (listing.last_seen or '')[:10] }}</td></tr>
+            <tr><td class="text-muted">Original price</td><td>
+                {% if listing.original_price is not none %}${{ "%.0f"|format(listing.original_price) }}{% else %}N/A{% endif %}
+            </td></tr>
+            <tr><td class="text-muted">Status</td><td>
+                {% if listing.is_active %}<span class="badge bg-success">Active</span>
+                {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+            </td></tr>
+            <tr><td class="text-muted">Kijiji</td><td><a href="{{ listing.url }}" target="_blank">View on Kijiji</a></td></tr>
+        </table>
+
+        {% if listing.description %}
+        <h6>Description</h6>
+        <div class="card card-body mb-3" style="max-height: 300px; overflow-y: auto;">
+            {{ listing.description }}
+        </div>
+        {% endif %}
+
+        <!-- Price History Chart -->
+        <h6>Price History</h6>
+        <div class="card card-body">
+            {% if price_history|length > 1 %}
+            <canvas id="priceChart" height="200"></canvas>
+            {% else %}
+            <p class="text-muted mb-0">Not enough data yet. Price history will appear after multiple scrape runs.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Images sidebar -->
+    <div class="col-md-4">
+        {% set images = listing.image_urls|from_json %}
+        {% if images %}
+        <div class="d-flex flex-column gap-2">
+            {% for img_url in images %}
+            <img src="{{ img_url }}" alt="Listing image" class="img-fluid rounded">
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if price_history|length > 1 %}
+<script>
+fetch('/api/price-history/{{ listing.kijiji_id }}')
+    .then(r => r.json())
+    .then(data => {
+        new Chart(document.getElementById('priceChart'), {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [{
+                    label: 'Price ($)',
+                    data: data.prices,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                    fill: true,
+                    tension: 0.1,
+                    pointRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: { callback: v => '$' + v }
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    });
+</script>
+{% endif %}
+{% endblock %}

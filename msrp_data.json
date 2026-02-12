@@ -1,0 +1,53 @@
+{
+    "bambu": {
+        "A1 Mini": {"msrp_usd": 199, "msrp_cad": 270},
+        "A1": {"msrp_usd": 399, "msrp_cad": 540},
+        "P1P": {"msrp_usd": 599, "msrp_cad": 810},
+        "P1S": {"msrp_usd": 699, "msrp_cad": 950},
+        "X1 Carbon": {"msrp_usd": 1199, "msrp_cad": 1620},
+        "X1C": {"msrp_usd": 1199, "msrp_cad": 1620}
+    },
+    "prusa": {
+        "Mini+": {"msrp_usd": 429, "msrp_cad": 580},
+        "MK3S+": {"msrp_usd": 799, "msrp_cad": 1080},
+        "MK4": {"msrp_usd": 799, "msrp_cad": 1080},
+        "MK4S": {"msrp_usd": 899, "msrp_cad": 1215},
+        "XL": {"msrp_usd": 1999, "msrp_cad": 2700}
+    },
+    "creality": {
+        "Ender 3 V3": {"msrp_usd": 199, "msrp_cad": 270},
+        "Ender 3 V3 KE": {"msrp_usd": 269, "msrp_cad": 365},
+        "K1": {"msrp_usd": 419, "msrp_cad": 570},
+        "K1 Max": {"msrp_usd": 599, "msrp_cad": 810},
+        "K1C": {"msrp_usd": 479, "msrp_cad": 650}
+    },
+    "ender": {
+        "Ender 3": {"msrp_usd": 189, "msrp_cad": 255},
+        "Ender 3 V2": {"msrp_usd": 259, "msrp_cad": 350},
+        "Ender 3 V3": {"msrp_usd": 199, "msrp_cad": 270},
+        "Ender 3 S1": {"msrp_usd": 399, "msrp_cad": 540},
+        "Ender 5 S1": {"msrp_usd": 479, "msrp_cad": 650}
+    },
+    "anycubic": {
+        "Kobra 2": {"msrp_usd": 239, "msrp_cad": 325},
+        "Kobra 2 Max": {"msrp_usd": 449, "msrp_cad": 610},
+        "Kobra 3": {"msrp_usd": 399, "msrp_cad": 540}
+    },
+    "elegoo": {
+        "Neptune 4": {"msrp_usd": 239, "msrp_cad": 325},
+        "Neptune 4 Pro": {"msrp_usd": 299, "msrp_cad": 405},
+        "Neptune 4 Plus": {"msrp_usd": 379, "msrp_cad": 512}
+    },
+    "flashforge": {
+        "Adventurer 5M": {"msrp_usd": 379, "msrp_cad": 512},
+        "Adventurer 5M Pro": {"msrp_usd": 499, "msrp_cad": 675}
+    },
+    "sovol": {
+        "SV06": {"msrp_usd": 239, "msrp_cad": 325},
+        "SV07": {"msrp_usd": 339, "msrp_cad": 460}
+    },
+    "qidi": {
+        "X-Max 3": {"msrp_usd": 599, "msrp_cad": 810},
+        "X-Plus 3": {"msrp_usd": 499, "msrp_cad": 675}
+    }
+}

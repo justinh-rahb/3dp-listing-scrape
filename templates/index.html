@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Listings - 3DP Deal Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Filters sidebar -->
+    <div class="col-md-3 col-lg-2">
+        <form method="get" class="mb-3">
+            <h6>Filters</h6>
+
+            <div class="mb-2">
+                <input type="text" name="search" class="form-control form-control-sm"
+                       placeholder="Search..." value="{{ filters.search or '' }}">
+            </div>
+
+            <div class="mb-2">
+                <select name="brand" class="form-select form-select-sm">
+                    <option value="">All Brands</option>
+                    {% for brand in brands %}
+                    <option value="{{ brand }}" {% if filters.brand == brand %}selected{% endif %}>
+                        {{ brand|title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="mb-2">
+                <input type="number" name="min_price" class="form-control form-control-sm"
+                       placeholder="Min $" value="{{ filters.min_price or '' }}">
+            </div>
+            <div class="mb-2">
+                <input type="number" name="max_price" class="form-control form-control-sm"
+                       placeholder="Max $" value="{{ filters.max_price or '' }}">
+            </div>
+
+            <div class="mb-2">
+                <input type="text" name="location" class="form-control form-control-sm"
+                       placeholder="Location..." value="{{ filters.location or '' }}">
+            </div>
+
+            <div class="mb-2">
+                <select name="sort_by" class="form-select form-select-sm">
+                    <option value="last_seen" {% if filters.sort_by == 'last_seen' %}selected{% endif %}>Last Seen</option>
+                    <option value="newest" {% if filters.sort_by == 'newest' %}selected{% endif %}>Newest</option>
+                    <option value="price_asc" {% if filters.sort_by == 'price_asc' %}selected{% endif %}>Price: Low-High</option>
+                    <option value="price_desc" {% if filters.sort_by == 'price_desc' %}selected{% endif %}>Price: High-Low</option>
+                    <option value="price_drop" {% if filters.sort_by == 'price_drop' %}selected{% endif %}>Price Drop</option>
+                </select>
+            </div>
+
+            <div class="mb-2 form-check">
+                <input type="checkbox" name="active_only" value="1" class="form-check-input" id="activeOnly"
+                       {% if filters.active_only %}checked{% endif %}>
+                <label class="form-check-label" for="activeOnly">Active only</label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
+            <a href="/" class="btn btn-outline-secondary btn-sm w-100 mt-1">Reset</a>
+        </form>
+
+        {% if stats %}
+        <div class="card card-body small">
+            <strong>Stats</strong>
+            <div>Active: {{ stats.active_listings }}</div>
+            <div>Total: {{ stats.total_listings }}</div>
+            <div>Snapshots: {{ stats.total_snapshots }}</div>
+            <div>With drops: {{ stats.listings_with_drops }}</div>
+            {% if stats.last_run %}
+            <div class="mt-1 text-muted">Last scrape: {{ stats.last_run.started_at[:16] }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Listings table -->
+    <div class="col-md-9 col-lg-10">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">{{ listings|length }} Listings</h5>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Title</th>
+                        <th>Price</th>
+                        <th>Change</th>
+                        <th>Brand</th>
+                        <th>Location</th>
+                        <th>First Seen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for listing in listings %}
+                    <tr>
+                        <td>
+                            {% set images = listing.image_urls|from_json %}
+                            {% if images %}
+                            <img src="{{ images[0] }}" alt="" class="listing-thumb">
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/listing/{{ listing.kijiji_id }}">{{ listing.title[:60] }}</a>
+                            {% if not listing.is_active %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if listing.current_price is not none %}
+                            ${{ "%.0f"|format(listing.current_price) }}
+                            {% else %}
+                            Contact
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if listing.original_price and listing.current_price and listing.original_price != listing.current_price %}
+                                {% set drop = listing.original_price - listing.current_price %}
+                                {% if drop > 0 %}
+                                <span class="text-success">-${{ "%.0f"|format(drop) }}</span>
+                                {% else %}
+                                <span class="text-danger">+${{ "%.0f"|format(-drop) }}</span>
+                                {% endif %}
+                            {% endif %}
+                        </td>
+                        <td>{{ (listing.brand or '')|title }}</td>
+                        <td class="text-truncate" style="max-width: 150px;">{{ listing.location or '' }}</td>
+                        <td>{{ (listing.first_seen or '')[:10] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if not listings %}
+        <div class="text-center text-muted py-5">
+            No listings found. Run <code>python cli.py scrape</code> to fetch listings.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

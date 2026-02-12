@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Deals - 3DP Deal Tracker{% endblock %}
+
+{% block content %}
+<h4 class="mb-3">Deals <small class="text-muted">Listings with price drops or good MSRP ratios</small></h4>
+
+{% if deals %}
+<div class="row g-3">
+    {% for deal in deals %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card h-100">
+            {% if deal.image_url %}
+            <img src="{{ deal.image_url }}" class="card-img-top" alt=""
+                 style="height: 200px; object-fit: cover;">
+            {% endif %}
+            <div class="card-body">
+                <h6 class="card-title">
+                    <a href="/listing/{{ deal.kijiji_id }}">{{ deal.title[:60] }}</a>
+                </h6>
+
+                <div class="d-flex gap-2 mb-2 flex-wrap">
+                    <span class="badge bg-success fs-6">${{ "%.0f"|format(deal.current_price) }}</span>
+
+                    {% if deal.price_drop_abs > 0 %}
+                    <span class="badge bg-warning text-dark">
+                        -${{ "%.0f"|format(deal.price_drop_abs) }} ({{ "%.0f"|format(deal.price_drop_pct) }}%)
+                    </span>
+                    {% endif %}
+
+                    {% if deal.price_to_msrp_ratio is not none %}
+                    <span class="badge {% if deal.price_to_msrp_ratio < 0.5 %}bg-info{% else %}bg-secondary{% endif %}">
+                        {{ "%.0f"|format(deal.price_to_msrp_ratio * 100) }}% MSRP
+                    </span>
+                    {% endif %}
+                </div>
+
+                <div class="small text-muted">
+                    {% if deal.brand %}<span class="me-2">{{ deal.brand|title }}</span>{% endif %}
+                    {% if deal.location %}<span class="me-2">{{ deal.location }}</span>{% endif %}
+                    <span>{{ deal.days_on_market }} days on market</span>
+                </div>
+
+                {% if deal.original_price != deal.current_price %}
+                <div class="small mt-1">
+                    <s class="text-muted">${{ "%.0f"|format(deal.original_price) }}</s>
+                    &rarr; ${{ "%.0f"|format(deal.current_price) }}
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="{{ deal.url }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                    View on Kijiji
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+    <p>No deals found yet.</p>
+    <p>Deals appear when listings drop in price between scrape runs. Run <code>python cli.py scrape</code> periodically to track price changes.</p>
+</div>
+{% endif %}
+{% endblock %}
