@@ -50,17 +50,32 @@ def from_json_filter(value):
 templates.env.filters["from_json"] = from_json_filter
 
 
+def parse_optional_float(value: Optional[str]) -> Optional[float]:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if cleaned == "":
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 # ── Page Routes ────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, brand: Optional[str] = None,
-                min_price: Optional[float] = None, max_price: Optional[float] = None,
+                min_price: Optional[str] = None, max_price: Optional[str] = None,
                 location: Optional[str] = None, search: Optional[str] = None,
                 active_only: str = "1", sort_by: str = "last_seen"):
+    min_price_value = parse_optional_float(min_price)
+    max_price_value = parse_optional_float(max_price)
+
     filters = {
         "brand": brand,
-        "min_price": min_price,
-        "max_price": max_price,
+        "min_price": min_price_value,
+        "max_price": max_price_value,
         "location": location,
         "search": search,
         "active_only": active_only == "1",
