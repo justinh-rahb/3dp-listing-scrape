@@ -508,7 +508,11 @@ class RetailScraper:
         if "formbot3d.com" in host:
             return "formbot"
         # Generic fallback for new Shopify manufacturers.
-        base = host.replace("www.", "").split(".")[0].strip()
+        parts = host.replace("www.", "").split(".")
+        if len(parts) >= 3 and parts[0] in {"shop", "store"}:
+            base = parts[1].strip()
+        else:
+            base = parts[0].strip()
         return base if base else "shopify"
 
     def _stable_id(self, source: str, url: str) -> str:

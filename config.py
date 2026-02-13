@@ -63,6 +63,14 @@ DEFAULT_SEARCH_QUERIES = [
         "url": "https://www.formbot3d.com/products/voron-24-r2-pro-corexy-3d-printer-kit-with-m8p-cb1-board-and-canbus-wiring-system?VariantsId=10457",
         "label": "formbot 2.4 r2",
     },
+    {
+        "url": "https://3dprintingcanada.com/products/bambu-lab-p1s",
+        "label": "3dpc p1s",
+    },
+    {
+        "url": "https://shop.snapmaker.com/products/snapmaker-u1-3d-printer",
+        "label": "snapmaker u1",
+    },
 ]
 
 DEFAULT_BRAND_KEYWORDS = {

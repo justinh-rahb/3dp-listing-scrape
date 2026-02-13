@@ -13,11 +13,15 @@
 
         <h4>{{ listing.title }}</h4>
         <div class="mb-2">
-            <button onclick="toggleHide('{{ listing.kijiji_id }}', {{ 'false' if listing.is_hidden else 'true' }})"
+            <button type="button" onclick="toggleHide('{{ listing.kijiji_id }}', {{ 'false' if listing.is_hidden else 'true' }})"
                     class="btn btn-outline-secondary btn-sm"
                     data-kijiji-id="{{ listing.kijiji_id }}"
                     data-hidden="{{ 'true' if listing.is_hidden else 'false' }}">
                 {{ 'Unhide listing' if listing.is_hidden else 'Hide listing' }}
+            </button>
+            <button type="button" onclick="deleteListingDetail('{{ listing.kijiji_id }}')"
+                    class="btn btn-outline-danger btn-sm ms-1">
+                Delete listing
             </button>
         </div>
 
@@ -100,6 +104,23 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+async function deleteListingDetail(kijiji_id) {
+    const confirmed = await showConfirmModal({
+        title: 'Delete Listing',
+        body: 'Delete this listing? This cannot be undone.',
+        confirmText: 'Delete',
+        confirmClass: 'btn-danger',
+    });
+    if (!confirmed) return;
+    const response = await fetch(`/api/listing/${kijiji_id}`, {method: 'DELETE'});
+    if (!response.ok) {
+        await showAlertModal('Failed to delete listing.', 'Delete Failed');
+        return;
+    }
+    window.location.href = '/';
+}
+</script>
 {% if price_history|length > 1 %}
 <script>
 fetch('/api/price-history/{{ listing.kijiji_id }}')

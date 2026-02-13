@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -187,6 +187,30 @@ async def api_bulk_hide(data: BulkHideRequest):
         conn.close()
 
 
+@app.delete("/api/listing/{kijiji_id}")
+async def api_delete_listing(kijiji_id: str):
+    deleted = db.delete_listing(kijiji_id)
+    return {"ok": deleted, "kijiji_id": kijiji_id}
+
+
+class BulkDeleteRequest(BaseModel):
+    kijiji_ids: list[str]
+
+
+@app.post("/api/listings/bulk-delete")
+async def api_bulk_delete(data: BulkDeleteRequest):
+    conn = db.get_conn()
+    try:
+        deleted = db.delete_listings(data.kijiji_ids, conn=conn)
+        conn.commit()
+        return {"ok": True, "deleted": deleted}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @app.get("/deals", response_class=HTMLResponse)
 async def deals_page(request: Request):
     listings = db.get_listings({"active_only": True})
@@ -235,6 +259,10 @@ class SettingsUpdate(BaseModel):
     inactive_threshold: Optional[int] = None
 
 
+class ClearDbRequest(BaseModel):
+    preserve_settings: bool = True
+
+
 @app.put("/api/settings")
 async def api_update_settings(data: SettingsUpdate):
     updated = {}
@@ -246,6 +274,12 @@ async def api_update_settings(data: SettingsUpdate):
         scheduler.start_scheduler(updated["scrape_interval_hours"])
 
     return {"updated": updated}
+
+
+@app.post("/api/settings/clear-db")
+async def api_clear_db(data: ClearDbRequest):
+    result = db.clear_database(preserve_settings=data.preserve_settings)
+    return {"ok": True, **result}
 
 
 # ── API: Search Queries ────────────────────────────────────────
@@ -282,6 +316,17 @@ async def api_update_query(query_id: int, data: SearchQueryUpdate):
 async def api_delete_query(query_id: int):
     db.delete_search_query(query_id)
     return {"ok": True}
+
+
+@app.post("/api/search-queries/{query_id}/scrape")
+async def api_scrape_query(query_id: int):
+    query = next((q for q in db.get_search_queries() if q["id"] == query_id), None)
+    if not query:
+        raise HTTPException(status_code=404, detail="Search query not found")
+    result = scheduler.trigger_query(query_id)
+    if "error" in result:
+        raise HTTPException(status_code=409, detail=result["error"])
+    return {"ok": True, "query_id": query_id, "label": query["label"]}
 
 
 # ── API: Brand Keywords ───────────────────────────────────────

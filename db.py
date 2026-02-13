@@ -660,6 +660,74 @@ def set_listing_hidden(kijiji_id: str, hidden: bool,
         conn.close()
 
 
+def delete_listing(kijiji_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
+    """Delete one listing and its price snapshots. Returns True if deleted."""
+    close = conn is None
+    if close:
+        conn = get_conn()
+
+    conn.execute("DELETE FROM price_snapshots WHERE kijiji_id = ?", (kijiji_id,))
+    cursor = conn.execute("DELETE FROM listings WHERE kijiji_id = ?", (kijiji_id,))
+    deleted = cursor.rowcount > 0
+
+    if close:
+        conn.commit()
+        conn.close()
+    return deleted
+
+
+def delete_listings(kijiji_ids: list[str], conn: Optional[sqlite3.Connection] = None) -> int:
+    """Delete multiple listings and their snapshots. Returns number deleted."""
+    close = conn is None
+    if close:
+        conn = get_conn()
+
+    deleted = 0
+    for kid in kijiji_ids:
+        if delete_listing(kid, conn=conn):
+            deleted += 1
+
+    if close:
+        conn.commit()
+        conn.close()
+    return deleted
+
+
+def clear_database(preserve_settings: bool = True,
+                   conn: Optional[sqlite3.Connection] = None) -> dict:
+    """Clear listing data. Optionally clear configuration tables too."""
+    close = conn is None
+    if close:
+        conn = get_conn()
+
+    conn.execute("DELETE FROM price_snapshots")
+    conn.execute("DELETE FROM listings")
+    conn.execute("DELETE FROM scrape_runs")
+
+    result = {
+        "cleared": ["price_snapshots", "listings", "scrape_runs"],
+        "preserved_settings": preserve_settings,
+    }
+
+    if not preserve_settings:
+        conn.execute("DELETE FROM settings")
+        conn.execute("DELETE FROM search_queries")
+        conn.execute("DELETE FROM brand_keywords")
+        conn.execute("DELETE FROM msrp_entries")
+        result["cleared"].extend(["settings", "search_queries", "brand_keywords", "msrp_entries"])
+        _seed_defaults(conn)
+
+    # Reset autoincrement counters for cleaner IDs after clear.
+    conn.execute(
+        "DELETE FROM sqlite_sequence WHERE name IN ('price_snapshots', 'scrape_runs', 'search_queries', 'brand_keywords', 'msrp_entries')"
+    )
+
+    if close:
+        conn.commit()
+        conn.close()
+    return result
+
+
 def get_price_history(kijiji_id: str, conn: Optional[sqlite3.Connection] = None) -> list[dict]:
     close = conn is None
     if close:

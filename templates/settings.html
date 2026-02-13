@@ -20,11 +20,11 @@
             </span>
         </div>
         <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-success" onclick="schedulerAction('start')" id="btn-start"
+            <button type="button" class="btn btn-sm btn-success" onclick="schedulerAction('start')" id="btn-start"
                     {% if scheduler.running %}disabled{% endif %}>Start</button>
-            <button class="btn btn-sm btn-danger" onclick="schedulerAction('stop')" id="btn-stop"
+            <button type="button" class="btn btn-sm btn-danger" onclick="schedulerAction('stop')" id="btn-stop"
                     {% if not scheduler.running %}disabled{% endif %}>Stop</button>
-            <button class="btn btn-sm btn-primary" onclick="schedulerAction('trigger')">Scrape Now</button>
+            <button type="button" class="btn btn-sm btn-primary" onclick="schedulerAction('trigger')">Scrape Now</button>
         </div>
     </div>
 </div>
@@ -70,6 +70,20 @@
                 <button type="submit" class="btn btn-primary">Save Settings</button>
                 <span id="settings-saved" class="text-success ms-2" style="display:none">Saved!</span>
             </div>
+            <div class="col-12 mt-4">
+                <div class="card border-danger">
+                    <div class="card-body">
+                        <h6 class="text-danger mb-2">Danger Zone</h6>
+                        <p class="small text-muted mb-3">
+                            Clear scraped listing data (listings, price snapshots, and scrape run history).
+                            Search queries and settings are preserved.
+                        </p>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="clearDatabase()">
+                            Clear DB
+                        </button>
+                    </div>
+                </div>
+            </div>
         </form>
     </div>
 
@@ -77,7 +91,7 @@
     <div class="tab-pane" id="tab-queries">
         <table class="table table-sm" id="queries-table">
             <thead>
-                <tr><th>Label</th><th>URL</th><th>Enabled</th><th></th></tr>
+                <tr><th>Label</th><th>URL</th><th>Enabled</th><th>Actions</th></tr>
             </thead>
             <tbody>
                 {% for q in queries %}
@@ -89,7 +103,10 @@
                                data-id="{{ q.id }}" {% if q.enabled %}checked{% endif %}>
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteQuery({{ q.id }}, this)">Delete</button>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="scrapeQuery({{ q.id }}, this)">Scrape</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteQuery({{ q.id }}, this)">Delete</button>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -124,7 +141,7 @@
                     <td>{{ b.brand }}</td>
                     <td>{{ b.keyword }}</td>
                     <td>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteBrand({{ b.id }}, this)">Delete</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteBrand({{ b.id }}, this)">Delete</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -160,7 +177,7 @@
                     <td>${{ "%.0f"|format(m.msrp_cad) }}</td>
                     <td>{% if m.msrp_usd %}${{ "%.0f"|format(m.msrp_usd) }}{% else %}-{% endif %}</td>
                     <td>
-                        <button class="btn btn-sm btn-outline-danger" onclick="deleteMsrp({{ m.id }}, this)">Delete</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteMsrp({{ m.id }}, this)">Delete</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -199,7 +216,12 @@ async function api(method, url, body) {
     const opts = {method, headers: {'Content-Type': 'application/json'}};
     if (body) opts.body = JSON.stringify(body);
     const r = await fetch(url, opts);
-    return r.json();
+    const payload = await r.json().catch(() => ({}));
+    if (!r.ok) {
+        const message = payload.detail || payload.error || `Request failed (${r.status})`;
+        throw new Error(message);
+    }
+    return payload;
 }
 
 // Scheduler
@@ -238,6 +260,23 @@ async function deleteQuery(id, btn) {
     btn.closest('tr').remove();
 }
 
+async function scrapeQuery(id, btn) {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Queued...';
+    try {
+        await api('POST', `/api/search-queries/${id}/scrape`);
+        setTimeout(() => {
+            btn.textContent = original;
+            btn.disabled = false;
+        }, 1000);
+    } catch (e) {
+        btn.textContent = original;
+        btn.disabled = false;
+        await showAlertModal('Failed to trigger query scrape.', 'Request Failed');
+    }
+}
+
 // Brands
 document.getElementById('add-brand-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -265,6 +304,24 @@ document.getElementById('add-msrp-form').addEventListener('submit', async (e) =>
 async function deleteMsrp(id, btn) {
     await api('DELETE', `/api/msrp/${id}`);
     btn.closest('tr').remove();
+}
+
+async function clearDatabase() {
+    const confirmed = await showConfirmModal({
+        title: 'Clear Database',
+        body: 'Clear all listing data from the database? This cannot be undone.',
+        confirmText: 'Clear DB',
+        confirmClass: 'btn-danger',
+    });
+    if (!confirmed) return;
+
+    const result = await api('POST', '/api/settings/clear-db', {preserve_settings: true});
+    if (result.ok) {
+        await showAlertModal('Database cleared.', 'Success');
+        window.location.href = '/';
+    } else {
+        await showAlertModal('Failed to clear database.', 'Request Failed');
+    }
 }
 </script>
 {% endblock %}

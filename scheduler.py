@@ -43,7 +43,9 @@ def _to_usd(price: Optional[float], currency: Optional[str], fx_rates: dict) -> 
     return float(price) * float(rate)
 
 
-def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = None) -> dict:
+def run_scrape(max_pages: Optional[int] = None,
+               query_filter: Optional[str] = None,
+               query_id: Optional[int] = None) -> dict:
     """Run a full scrape cycle. Shared between CLI and scheduler.
 
     Returns a summary dict with counts.
@@ -72,6 +74,8 @@ def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = No
         queries = db.get_search_queries(enabled_only=True, conn=conn)
         if query_filter:
             queries = [q for q in queries if q["label"] == query_filter]
+        if query_id is not None:
+            queries = [q for q in queries if q["id"] == query_id]
 
         total_found = 0
         total_new = 0
@@ -216,9 +220,20 @@ def stop_scheduler(disable: bool = True):
 
 def trigger_now():
     """Trigger an immediate scrape (runs in a background thread)."""
+    if _is_running:
+        return {"error": "Scrape already in progress"}
     thread = threading.Thread(target=run_scrape, daemon=True)
     thread.start()
     return {"status": "triggered"}
+
+
+def trigger_query(query_id: int):
+    """Trigger an immediate scrape for a single query id."""
+    if _is_running:
+        return {"error": "Scrape already in progress"}
+    thread = threading.Thread(target=run_scrape, kwargs={"query_id": query_id}, daemon=True)
+    thread.start()
+    return {"status": "triggered", "query_id": query_id}
 
 
 def get_status() -> dict:
