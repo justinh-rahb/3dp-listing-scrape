@@ -660,6 +660,42 @@ def set_listing_hidden(kijiji_id: str, hidden: bool,
         conn.close()
 
 
+def update_listing_brand_model(kijiji_id: str, brand: Optional[str], model: Optional[str],
+                               conn: Optional[sqlite3.Connection] = None) -> bool:
+    """Manually update listing brand/model and refresh MSRP from msrp_entries."""
+    close = conn is None
+    if close:
+        conn = get_conn()
+
+    normalized_brand = (brand or "").strip().lower() or None
+    normalized_model = (model or "").strip() or None
+
+    msrp = None
+    if normalized_brand and normalized_model:
+        row = conn.execute(
+            """
+            SELECT msrp_cad
+            FROM msrp_entries
+            WHERE brand = ? AND LOWER(model) = LOWER(?)
+            LIMIT 1
+            """,
+            (normalized_brand, normalized_model),
+        ).fetchone()
+        if row:
+            msrp = row["msrp_cad"]
+
+    cursor = conn.execute(
+        "UPDATE listings SET brand = ?, model = ?, msrp = ? WHERE kijiji_id = ?",
+        (normalized_brand, normalized_model, msrp, kijiji_id),
+    )
+    updated = cursor.rowcount > 0
+    conn.commit()
+
+    if close:
+        conn.close()
+    return updated
+
+
 def delete_listing(kijiji_id: str, conn: Optional[sqlite3.Connection] = None) -> bool:
     """Delete one listing and its price snapshots. Returns True if deleted."""
     close = conn is None

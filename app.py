@@ -179,6 +179,33 @@ async def api_unhide_listing(kijiji_id: str):
     return {"ok": True, "kijiji_id": kijiji_id, "is_hidden": False}
 
 
+class ListingMetadataUpdate(BaseModel):
+    brand: Optional[str] = None
+    model: Optional[str] = None
+
+
+@app.put("/api/listing/{kijiji_id}/metadata")
+async def api_update_listing_metadata(kijiji_id: str, data: ListingMetadataUpdate):
+    if data.brand is None and data.model is None:
+        raise HTTPException(status_code=400, detail="At least one field is required")
+
+    listing = db.get_listing(kijiji_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+
+    brand = data.brand if data.brand is not None else listing.get("brand")
+    model = data.model if data.model is not None else listing.get("model")
+    db.update_listing_brand_model(kijiji_id, brand, model)
+    updated = db.get_listing(kijiji_id)
+    return {
+        "ok": True,
+        "kijiji_id": kijiji_id,
+        "brand": updated.get("brand") if updated else None,
+        "model": updated.get("model") if updated else None,
+        "msrp": updated.get("msrp") if updated else None,
+    }
+
+
 class BulkHideRequest(BaseModel):
     kijiji_ids: list[str]
     hide: bool

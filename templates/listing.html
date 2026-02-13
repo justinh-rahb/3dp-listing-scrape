@@ -41,17 +41,18 @@
                 {% endif %}
             {% endif %}
 
-            {% if listing.msrp %}
-            <span class="badge bg-info fs-6 align-self-center">
+            <span id="msrp-badge"
+                  class="badge bg-info fs-6 align-self-center {% if not listing.msrp %}d-none{% endif %}">
+                {% if listing.msrp %}
                 MSRP: ${{ "%.0f"|format(listing.msrp) }}
                 ({{ "%.0f"|format(listing.current_price / listing.msrp * 100) }}%)
+                {% endif %}
             </span>
-            {% endif %}
         </div>
 
         <table class="table table-sm w-auto">
-            <tr><td class="text-muted">Brand</td><td>{{ (listing.brand or 'Unknown')|title }}</td></tr>
-            <tr><td class="text-muted">Model</td><td>{{ listing.model or 'Unknown' }}</td></tr>
+            <tr><td class="text-muted">Brand</td><td id="brand-value">{{ (listing.brand or 'Unknown')|title }}</td></tr>
+            <tr><td class="text-muted">Model</td><td id="model-value">{{ listing.model or 'Unknown' }}</td></tr>
             <tr><td class="text-muted">Source</td><td>{{ (listing.source or 'kijiji')|upper }}</td></tr>
             <tr><td class="text-muted">Location</td><td>{{ listing.location or 'Unknown' }}</td></tr>
             <tr><td class="text-muted">First seen</td><td>{{ (listing.first_seen or '')[:10] }}</td></tr>
@@ -70,6 +71,24 @@
             </td></tr>
             <tr><td class="text-muted">Link</td><td><a href="{{ listing.url }}" target="_blank">View listing</a></td></tr>
         </table>
+
+        <h6>Manual Brand/Model</h6>
+        <form id="metadata-form" class="row g-2 mb-3" style="max-width: 540px;">
+            <div class="col-md-5">
+                <label for="brand-input" class="form-label text-muted mb-1">Brand</label>
+                <input id="brand-input" class="form-control" type="text" value="{{ listing.brand or '' }}" placeholder="e.g. bambu">
+            </div>
+            <div class="col-md-5">
+                <label for="model-input" class="form-label text-muted mb-1">Model</label>
+                <input id="model-input" class="form-control" type="text" value="{{ listing.model or '' }}" placeholder="e.g. P1S">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" id="metadata-save-btn" class="btn btn-primary w-100">Save</button>
+            </div>
+            <div class="col-12">
+                <small id="metadata-saved-msg" class="text-success" style="display:none;">Saved.</small>
+            </div>
+        </form>
 
         {% if listing.description %}
         <h6>Description</h6>
@@ -105,6 +124,63 @@
 
 {% block scripts %}
 <script>
+const detailCurrentPrice = {{ "null" if listing.current_price is none else listing.current_price }};
+const listingId = "{{ listing.kijiji_id }}";
+
+function toTitleCaseWords(value) {
+    return value.replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1));
+}
+
+document.getElementById('metadata-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = document.getElementById('metadata-save-btn');
+    const savedMsg = document.getElementById('metadata-saved-msg');
+    const brandInput = document.getElementById('brand-input');
+    const modelInput = document.getElementById('model-input');
+    const brand = brandInput.value.trim();
+    const model = modelInput.value.trim();
+
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    savedMsg.style.display = 'none';
+
+    try {
+        const response = await fetch(`/api/listing/${listingId}/metadata`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({brand, model}),
+        });
+        if (!response.ok) {
+            throw new Error('Request failed');
+        }
+        const data = await response.json();
+        const brandValue = document.getElementById('brand-value');
+        const modelValue = document.getElementById('model-value');
+        const msrpBadge = document.getElementById('msrp-badge');
+
+        brandValue.textContent = data.brand ? toTitleCaseWords(data.brand) : 'Unknown';
+        modelValue.textContent = data.model || 'Unknown';
+
+        if (data.msrp && detailCurrentPrice !== null) {
+            const msrpPct = Math.round((detailCurrentPrice / data.msrp) * 100);
+            msrpBadge.textContent = `MSRP: $${Math.round(data.msrp)} (${msrpPct}%)`;
+            msrpBadge.classList.remove('d-none');
+        } else {
+            msrpBadge.classList.add('d-none');
+            msrpBadge.textContent = '';
+        }
+
+        savedMsg.style.display = 'inline';
+        setTimeout(() => { savedMsg.style.display = 'none'; }, 2000);
+    } catch (error) {
+        console.error('Failed to save metadata', error);
+        await showAlertModal('Failed to save brand/model. Please try again.', 'Save Failed');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+    }
+});
+
 async function deleteListingDetail(kijiji_id) {
     const confirmed = await showConfirmModal({
         title: 'Delete Listing',
