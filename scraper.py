@@ -493,14 +493,23 @@ class RetailScraper:
         return resp.text
 
     def scrape_url(self, url: str) -> list[ScrapedListing]:
-        if "sovol3d.com" in url:
-            return self._scrape_sovol_zero(url)
+        path = urlparse(url).path.lower()
+        if "/products/" in path:
+            return self._scrape_shopify_product(url)
         if "formbot3d.com" in url:
-            if "/products/" in urlparse(url).path:
-                return self._scrape_formbot_product(url)
             return self._scrape_formbot_vorons(url)
         logger.warning(f"No retail scraper registered for url={url}")
         return []
+
+    def _infer_source_from_url(self, url: str) -> str:
+        host = urlparse(url).netloc.lower()
+        if "sovol3d.com" in host:
+            return "sovol"
+        if "formbot3d.com" in host:
+            return "formbot"
+        # Generic fallback for new Shopify manufacturers.
+        base = host.replace("www.", "").split(".")[0].strip()
+        return base if base else "shopify"
 
     def _stable_id(self, source: str, url: str) -> str:
         digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
@@ -522,6 +531,16 @@ class RetailScraper:
                 return None
         return None
 
+    def _parse_shopify_money(self, value) -> Optional[float]:
+        """Parse Shopify money values that may be decimal dollars or integer cents."""
+        amount = self._parse_amount(value)
+        if amount is None:
+            return None
+        # Shopify product JSON often stores money in cents.
+        if amount >= 10000:
+            return amount / 100.0
+        return amount
+
     def _extract_currency(self, text: str, default: str = "USD") -> str:
         lowered = text.lower()
         if "cad" in lowered:
@@ -540,6 +559,14 @@ class RetailScraper:
                 continue
         return prices
 
+    def _detect_currency_from_text(self, text: str, default: str = "USD") -> str:
+        lowered = text.lower()
+        if "cad" in lowered or "ca$" in lowered or "c$" in lowered:
+            return "CAD"
+        if "usd" in lowered or "us$" in lowered or "$" in lowered:
+            return "USD"
+        return default
+
     def _json_ld_blocks(self, soup: BeautifulSoup) -> list[dict]:
         blocks = []
         for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
@@ -556,20 +583,124 @@ class RetailScraper:
                 blocks.append(parsed)
         return blocks
 
-    def _scrape_sovol_zero(self, url: str) -> list[ScrapedListing]:
-        html = self._get(url)
+    def _extract_shopify_variant_prices(self, html: str, soup: BeautifulSoup) -> tuple[Optional[float], Optional[float], Optional[str]]:
+        """Extract min current price and max compare-at price from Shopify product data."""
+        current_candidates: list[float] = []
+        compare_candidates: list[float] = []
+        currency: Optional[str] = None
 
-        soup = BeautifulSoup(html, "lxml")
-        title = None
-        current_price = None
-        nominal_price = None
-        currency = "USD"
+        def collect_from_variant_dict(variant: dict):
+            nonlocal currency
+            curr = self._parse_shopify_money(variant.get("price"))
+            comp = self._parse_shopify_money(variant.get("compare_at_price"))
+            if curr is not None:
+                current_candidates.append(curr)
+            if comp is not None:
+                compare_candidates.append(comp)
+            curr_code = variant.get("currency") or variant.get("price_currency")
+            if isinstance(curr_code, str) and curr_code.strip():
+                currency = curr_code.strip().upper()
+
+        # Parse explicit JSON script blocks where product variants are typically embedded.
+        for script in soup.find_all("script", attrs={"type": "application/json"}):
+            raw = script.string or script.get_text()
+            if not raw:
+                continue
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            stack = [parsed]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, dict):
+                    variants = node.get("variants")
+                    if isinstance(variants, list):
+                        for variant in variants:
+                            if isinstance(variant, dict):
+                                collect_from_variant_dict(variant)
+                    for value in node.values():
+                        if isinstance(value, (dict, list)):
+                            stack.append(value)
+                elif isinstance(node, list):
+                    for value in node:
+                        if isinstance(value, (dict, list)):
+                            stack.append(value)
+
+        # Regex fallback for inline objects when script JSON is not directly parseable.
+        for match in re.finditer(r'"price"\s*:\s*"?(?P<v>\d+(?:\.\d+)?)"?', html):
+            parsed = self._parse_shopify_money(match.group("v"))
+            if parsed is not None:
+                current_candidates.append(parsed)
+        for match in re.finditer(r'"compare_at_price(?:_min|_max)?"\s*:\s*"?(?P<v>\d+(?:\.\d+)?)"?', html):
+            parsed = self._parse_shopify_money(match.group("v"))
+            if parsed is not None:
+                compare_candidates.append(parsed)
+        if currency is None:
+            m = re.search(r'"currency"\s*:\s*"(?P<c>[A-Za-z]{3})"', html)
+            if m:
+                currency = m.group("c").upper()
+
+        current = min(current_candidates) if current_candidates else None
+        nominal = max(compare_candidates) if compare_candidates else None
+        return current, nominal, currency
+
+    def _extract_dom_prices(self, soup: BeautifulSoup) -> tuple[Optional[float], Optional[float], Optional[str]]:
+        """Extract current and nominal prices from rendered product DOM."""
+        current_candidates: list[float] = []
+        nominal_candidates: list[float] = []
+        currency: Optional[str] = None
+
+        # Current price from known product-price containers.
+        for selector in (
+            "#cur_price",
+            ".themes_products_price",
+            "[itemprop='price']",
+            ".product-price",
+            ".price",
+        ):
+            for el in soup.select(selector):
+                text = el.get_text(" ", strip=True)
+                if not text:
+                    continue
+                prices = self._extract_all_prices(text)
+                if prices:
+                    current_candidates.extend(prices)
+                if currency is None:
+                    maybe_currency = self._detect_currency_from_text(text, default="USD")
+                    if maybe_currency:
+                        currency = maybe_currency
+
+        # Nominal/original price from strike-through and compare-price containers.
+        for selector in (
+            "del",
+            ".themes_products_origin_price",
+            ".compare-at-price",
+            ".old-price",
+            ".origin-price",
+        ):
+            for el in soup.select(selector):
+                text = el.get_text(" ", strip=True)
+                if not text:
+                    continue
+                prices = self._extract_all_prices(text)
+                if prices:
+                    nominal_candidates.extend(prices)
+                if currency is None:
+                    maybe_currency = self._detect_currency_from_text(text, default="USD")
+                    if maybe_currency:
+                        currency = maybe_currency
+
+        current = min(current_candidates) if current_candidates else None
+        nominal = max(nominal_candidates) if nominal_candidates else None
+        return current, nominal, currency
+
+    def _extract_images_from_shopify_html(self, url: str, html: str, soup: BeautifulSoup) -> list[str]:
         image_urls: list[str] = []
-
         for block in self._json_ld_blocks(soup):
             if block.get("@type") != "Product":
                 continue
-            title = block.get("name") or title
             image_data = block.get("image")
             if isinstance(image_data, str) and image_data:
                 image_urls.append(urljoin(url, image_data))
@@ -585,34 +716,6 @@ class RetailScraper:
                 img_url = image_data.get("url") or image_data.get("contentUrl") or image_data.get("src")
                 if isinstance(img_url, str) and img_url:
                     image_urls.append(urljoin(url, img_url))
-            offers = block.get("offers")
-            offer_items = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
-            for offer in offer_items:
-                price = self._parse_amount(offer.get("price"))
-                if price is not None:
-                    current_price = price if current_price is None else min(current_price, price)
-                price_currency = offer.get("priceCurrency")
-                if isinstance(price_currency, str) and price_currency.strip():
-                    currency = price_currency.strip().upper()
-
-        if not title:
-            title_tag = soup.find(["h1", "title"])
-            title = title_tag.get_text(strip=True) if title_tag else "Sovol Zero 3D Printer"
-
-        if current_price is None:
-            price_candidates = self._extract_all_prices(soup.get_text(" ", strip=True))
-            if price_candidates:
-                current_price = min(price_candidates)
-                nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
-
-        # Shopify pages often include compare-at price in source JSON.
-        if nominal_price is None:
-            compare_match = re.search(r'"compare_at_price"\s*:\s*"?(?P<v>\d+)"?', html)
-            if compare_match and current_price is not None:
-                raw = float(compare_match.group("v"))
-                candidate = raw / 100.0 if raw > 10000 else raw
-                if candidate > current_price:
-                    nominal_price = candidate
 
         if not image_urls:
             og_img = soup.find("meta", attrs={"property": "og:image"})
@@ -631,7 +734,6 @@ class RetailScraper:
             if featured_match:
                 image_urls.append(urljoin(url, featured_match.group("img")))
         if not image_urls:
-            # Last-resort: capture first Shopify CDN image URL from page source.
             cdn_match = re.search(
                 r'(https?:)?//cdn\.shopify\.com/[^"\'\s>]+\.(?:jpg|jpeg|png|webp)',
                 html,
@@ -640,26 +742,96 @@ class RetailScraper:
             if cdn_match:
                 image_urls.append(urljoin(url, cdn_match.group(0)))
 
-        # De-duplicate while preserving order.
         seen = set()
-        deduped_images = []
+        deduped = []
         for img in image_urls:
             if img in seen:
                 continue
             seen.add(img)
-            deduped_images.append(img)
+            deduped.append(img)
+        return deduped[:10]
+
+    def _scrape_shopify_product(self, url: str) -> list[ScrapedListing]:
+        html = self._get(url)
+        soup = BeautifulSoup(html, "lxml")
+        source = self._infer_source_from_url(url)
+
+        title = None
+        current_price = None
+        nominal_price = None
+        currency = "USD"
+        variant_current, variant_nominal, variant_currency = self._extract_shopify_variant_prices(html, soup)
+        dom_current, dom_nominal, dom_currency = self._extract_dom_prices(soup)
+
+        for block in self._json_ld_blocks(soup):
+            if block.get("@type") != "Product":
+                continue
+            title = block.get("name") or title
+            offers = block.get("offers")
+            offer_items = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
+            for offer in offer_items:
+                price = self._parse_amount(offer.get("price"))
+                if price is not None:
+                    current_price = price if current_price is None else min(current_price, price)
+                price_currency = offer.get("priceCurrency")
+                if isinstance(price_currency, str) and price_currency.strip():
+                    currency = price_currency.strip().upper()
+
+        if variant_current is not None:
+            current_price = variant_current if current_price is None else min(current_price, variant_current)
+        if variant_currency:
+            currency = variant_currency
+
+        if dom_current is not None:
+            current_price = dom_current if current_price is None else min(current_price, dom_current)
+        if dom_currency:
+            currency = dom_currency
+
+        if not title:
+            title_tag = soup.find(["h1", "title"])
+            title = title_tag.get_text(strip=True) if title_tag else f"{source.title()} Product"
+
+        if current_price is None:
+            price_candidates = self._extract_all_prices(soup.get_text(" ", strip=True))
+            if price_candidates:
+                current_price = min(price_candidates)
+                nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
+
+        if nominal_price is None and variant_nominal is not None:
+            nominal_price = variant_nominal
+        if nominal_price is None and dom_nominal is not None:
+            nominal_price = dom_nominal
+
+        # Last fallback for compare-at in raw source.
+        if nominal_price is None:
+            compare_match = re.search(r'"compare_at_price"\s*:\s*"?(?P<v>\d+)"?', html)
+            if compare_match and current_price is not None:
+                candidate = self._parse_shopify_money(compare_match.group("v"))
+                if candidate is None:
+                    candidate = 0
+                if candidate > current_price:
+                    nominal_price = candidate
+
+        # Fallback for pages that expose only product price metas.
+        if current_price is None:
+            meta_price = soup.find("meta", attrs={"property": "product:price:amount"})
+            if meta_price and meta_price.get("content"):
+                current_price = self._parse_amount(meta_price["content"])
+        meta_currency = soup.find("meta", attrs={"property": "product:price:currency"})
+        if meta_currency and meta_currency.get("content"):
+            currency = meta_currency["content"].strip().upper()
 
         listing = ScrapedListing(
-            kijiji_id=self._stable_id("sovol", url),
+            kijiji_id=self._stable_id(source, url),
             url=url,
             title=title,
             price=current_price,
             currency=currency,
             nominal_price=nominal_price,
             on_sale=nominal_price is not None and current_price is not None and nominal_price > current_price,
-            source="sovol",
+            source=source,
             location="Online",
-            image_urls=deduped_images[:10],
+            image_urls=self._extract_images_from_shopify_html(url, html, soup),
         )
         return [listing]
 
@@ -685,93 +857,9 @@ class RetailScraper:
             if "voron" not in card_text.lower():
                 continue
             try:
-                listings.extend(self._scrape_formbot_product(product_url))
+                listings.extend(self._scrape_shopify_product(product_url))
             except Exception as e:
                 logger.debug(f"Failed to parse formbot product {product_url}: {e}")
                 continue
 
         return listings
-
-    def _scrape_formbot_product(self, url: str) -> list[ScrapedListing]:
-        html = self._get(url)
-        soup = BeautifulSoup(html, "lxml")
-
-        title = None
-        current_price = None
-        nominal_price = None
-        currency = "USD"
-        image_urls: list[str] = []
-
-        for block in self._json_ld_blocks(soup):
-            if block.get("@type") != "Product":
-                continue
-            title = block.get("name") or title
-            image_data = block.get("image")
-            if isinstance(image_data, str) and image_data:
-                image_urls.append(urljoin(url, image_data))
-            elif isinstance(image_data, list):
-                for img in image_data:
-                    if isinstance(img, str) and img:
-                        image_urls.append(urljoin(url, img))
-                    elif isinstance(img, dict):
-                        img_url = img.get("url") or img.get("contentUrl") or img.get("src")
-                        if isinstance(img_url, str) and img_url:
-                            image_urls.append(urljoin(url, img_url))
-            elif isinstance(image_data, dict):
-                img_url = image_data.get("url") or image_data.get("contentUrl") or image_data.get("src")
-                if isinstance(img_url, str) and img_url:
-                    image_urls.append(urljoin(url, img_url))
-
-            offers = block.get("offers")
-            offer_items = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
-            for offer in offer_items:
-                price = self._parse_amount(offer.get("price"))
-                if price is not None:
-                    current_price = price if current_price is None else min(current_price, price)
-                price_currency = offer.get("priceCurrency")
-                if isinstance(price_currency, str) and price_currency.strip():
-                    currency = price_currency.strip().upper()
-
-        if not title:
-            title_tag = soup.find(["h1", "title"])
-            title = title_tag.get_text(strip=True) if title_tag else "Formbot Voron Kit"
-
-        if current_price is None:
-            price_candidates = self._extract_all_prices(soup.get_text(" ", strip=True))
-            if price_candidates:
-                current_price = min(price_candidates)
-                nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
-
-        if nominal_price is None:
-            compare_match = re.search(r'"compare_at_price"\s*:\s*"?(?P<v>\d+)"?', html)
-            if compare_match and current_price is not None:
-                raw = float(compare_match.group("v"))
-                candidate = raw / 100.0 if raw > 10000 else raw
-                if candidate > current_price:
-                    nominal_price = candidate
-
-        if not image_urls:
-            og_img = soup.find("meta", attrs={"property": "og:image"})
-            if og_img and og_img.get("content"):
-                image_urls.append(urljoin(url, og_img["content"]))
-
-        seen = set()
-        deduped_images = []
-        for img in image_urls:
-            if img in seen:
-                continue
-            seen.add(img)
-            deduped_images.append(img)
-
-        return [ScrapedListing(
-            kijiji_id=self._stable_id("formbot", url),
-            url=url,
-            title=title,
-            price=current_price,
-            currency=currency,
-            nominal_price=nominal_price,
-            on_sale=nominal_price is not None and current_price is not None and nominal_price > current_price,
-            source="formbot",
-            location="Online",
-            image_urls=deduped_images[:10],
-        )]
