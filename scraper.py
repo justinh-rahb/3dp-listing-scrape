@@ -628,11 +628,7 @@ class RetailScraper:
                         if isinstance(value, (dict, list)):
                             stack.append(value)
 
-        # Regex fallback for inline objects when script JSON is not directly parseable.
-        for match in re.finditer(r'"price"\s*:\s*"?(?P<v>\d+(?:\.\d+)?)"?', html):
-            parsed = self._parse_shopify_money(match.group("v"))
-            if parsed is not None:
-                current_candidates.append(parsed)
+        # Regex fallback for compare-at values when script JSON is not directly parseable.
         for match in re.finditer(r'"compare_at_price(?:_min|_max)?"\s*:\s*"?(?P<v>\d+(?:\.\d+)?)"?', html):
             parsed = self._parse_shopify_money(match.group("v"))
             if parsed is not None:
@@ -641,6 +637,10 @@ class RetailScraper:
             m = re.search(r'"currency"\s*:\s*"(?P<c>[A-Za-z]{3})"', html)
             if m:
                 currency = m.group("c").upper()
+
+        # Guard against obvious junk values (e.g. "8" from "8% OFF" style payloads).
+        current_candidates = [p for p in current_candidates if p is not None and p >= 20]
+        compare_candidates = [p for p in compare_candidates if p is not None and p >= 20]
 
         current = min(current_candidates) if current_candidates else None
         nominal = max(compare_candidates) if compare_candidates else None
@@ -777,15 +777,17 @@ class RetailScraper:
                 if isinstance(price_currency, str) and price_currency.strip():
                     currency = price_currency.strip().upper()
 
-        if variant_current is not None:
-            current_price = variant_current if current_price is None else min(current_price, variant_current)
-        if variant_currency:
-            currency = variant_currency
-
+        # Use rendered DOM price as strongest signal for the active variant.
         if dom_current is not None:
-            current_price = dom_current if current_price is None else min(current_price, dom_current)
+            current_price = dom_current
+        elif variant_current is not None:
+            current_price = variant_current
+
+        # Currency precedence: DOM > variant JSON-LD inferred value.
         if dom_currency:
             currency = dom_currency
+        elif variant_currency:
+            currency = variant_currency
 
         if not title:
             title_tag = soup.find(["h1", "title"])
@@ -797,10 +799,10 @@ class RetailScraper:
                 current_price = min(price_candidates)
                 nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
 
-        if nominal_price is None and variant_nominal is not None:
-            nominal_price = variant_nominal
-        if nominal_price is None and dom_nominal is not None:
+        if dom_nominal is not None:
             nominal_price = dom_nominal
+        elif nominal_price is None and variant_nominal is not None:
+            nominal_price = variant_nominal
 
         # Last fallback for compare-at in raw source.
         if nominal_price is None:
