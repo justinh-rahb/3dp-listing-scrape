@@ -301,6 +301,13 @@ class SettingsUpdate(BaseModel):
     request_delay_min: Optional[float] = None
     request_delay_max: Optional[float] = None
     inactive_threshold: Optional[int] = None
+    webhook_enabled: Optional[bool] = None
+    webhook_url: Optional[str] = None
+    webhook_provider: Optional[str] = None
+    webhook_events: Optional[list[str]] = None
+    webhook_deal_max_price_to_retail_ratio: Optional[float] = None
+    webhook_deal_min_drop_pct: Optional[float] = None
+    webhook_deal_batch_size: Optional[int] = None
 
 
 class ClearDbRequest(BaseModel):

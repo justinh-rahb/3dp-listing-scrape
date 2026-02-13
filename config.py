@@ -35,6 +35,14 @@ DEFAULT_SETTINGS = {
     "fx_rates_to_usd": {"USD": 1.0, "CAD": 0.74},
     # Production-friendly default: start scheduler automatically with the server.
     "scheduler_enabled": True,
+    # Webhook notifications
+    "webhook_enabled": False,
+    "webhook_url": "",
+    "webhook_provider": "generic",
+    "webhook_events": ["scrape_completed", "new_deal_detected", "scrape_failed"],
+    "webhook_deal_max_price_to_retail_ratio": 0.9,
+    "webhook_deal_min_drop_pct": 15.0,
+    "webhook_deal_batch_size": 5,
 }
 
 DEFAULT_SEARCH_QUERIES = [

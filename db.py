@@ -144,6 +144,13 @@ def _seed_defaults(conn: sqlite3.Connection):
                 "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
                 (key, json.dumps(value))
             )
+    else:
+        # Backfill newly introduced defaults without overwriting user values.
+        for key, value in DEFAULT_SETTINGS.items():
+            conn.execute(
+                "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+                (key, json.dumps(value))
+            )
 
     # Search queries
     existing = conn.execute("SELECT COUNT(*) as c FROM search_queries").fetchone()["c"]

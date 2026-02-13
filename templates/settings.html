@@ -85,6 +85,74 @@
                 </div>
             </div>
         </form>
+
+        <hr class="my-4" style="max-width: 700px;">
+
+        <form id="webhook-form" class="row g-3" style="max-width: 700px;">
+            <div class="col-12">
+                <h6 class="mb-2">Webhook Notifications</h6>
+                <div class="form-check">
+                    <input id="webhook-enabled" class="form-check-input" type="checkbox" {% if settings.webhook_enabled %}checked{% endif %}>
+                    <label class="form-check-label" for="webhook-enabled">Enable webhook notifications</label>
+                </div>
+            </div>
+            <div class="col-md-8">
+                <label class="form-label">Webhook URL</label>
+                <input id="webhook-url" type="url" class="form-control"
+                       value="{{ settings.webhook_url | default('') }}"
+                       placeholder="https://...">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Provider</label>
+                <select id="webhook-provider" class="form-select">
+                    {% set provider = settings.webhook_provider | default('generic') %}
+                    <option value="generic" {% if provider == 'generic' %}selected{% endif %}>generic</option>
+                    <option value="discord" {% if provider == 'discord' %}selected{% endif %}>discord</option>
+                    <option value="google_chat" {% if provider == 'google_chat' %}selected{% endif %}>google_chat</option>
+                </select>
+            </div>
+            {% set selected_events = settings.webhook_events | default(['scrape_completed', 'new_deal_detected', 'scrape_failed']) %}
+            <div class="col-12">
+                <label class="form-label mb-1">Events</label>
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="form-check">
+                        <input id="evt-scrape-completed" class="form-check-input webhook-event" type="checkbox"
+                               value="scrape_completed" {% if 'scrape_completed' in selected_events %}checked{% endif %}>
+                        <label class="form-check-label" for="evt-scrape-completed">scrape_completed</label>
+                    </div>
+                    <div class="form-check">
+                        <input id="evt-new-deal" class="form-check-input webhook-event" type="checkbox"
+                               value="new_deal_detected" {% if 'new_deal_detected' in selected_events %}checked{% endif %}>
+                        <label class="form-check-label" for="evt-new-deal">new_deal_detected</label>
+                    </div>
+                    <div class="form-check">
+                        <input id="evt-scrape-failed" class="form-check-input webhook-event" type="checkbox"
+                               value="scrape_failed" {% if 'scrape_failed' in selected_events %}checked{% endif %}>
+                        <label class="form-check-label" for="evt-scrape-failed">scrape_failed</label>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Deal max ratio</label>
+                <input id="webhook-deal-ratio" type="number" step="0.01" min="0.1" max="2.0" class="form-control"
+                       value="{{ settings.webhook_deal_max_price_to_retail_ratio | default(0.9) }}">
+                <div class="form-text">price_to_retail_ratio threshold</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Deal min drop %</label>
+                <input id="webhook-deal-drop" type="number" step="0.1" min="0" max="100" class="form-control"
+                       value="{{ settings.webhook_deal_min_drop_pct | default(15) }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Deal batch size</label>
+                <input id="webhook-deal-batch" type="number" min="1" max="20" class="form-control"
+                       value="{{ settings.webhook_deal_batch_size | default(5) }}">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">Save Webhook Settings</button>
+                <span id="webhook-saved" class="text-success ms-2" style="display:none">Saved!</span>
+            </div>
+        </form>
     </div>
 
     <!-- Search Queries -->
@@ -239,6 +307,30 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
     await api('PUT', '/api/settings', data);
     document.getElementById('settings-saved').style.display = 'inline';
     setTimeout(() => document.getElementById('settings-saved').style.display = 'none', 2000);
+});
+
+document.getElementById('webhook-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const events = Array.from(document.querySelectorAll('.webhook-event:checked')).map((el) => el.value);
+    const ratio = parseFloat(document.getElementById('webhook-deal-ratio').value);
+    const minDrop = parseFloat(document.getElementById('webhook-deal-drop').value);
+    const batchSize = parseInt(document.getElementById('webhook-deal-batch').value, 10);
+    if (!Number.isFinite(ratio) || !Number.isFinite(minDrop) || !Number.isInteger(batchSize)) {
+        await showAlertModal('Deal thresholds must be valid numbers.', 'Invalid Input');
+        return;
+    }
+    const data = {
+        webhook_enabled: document.getElementById('webhook-enabled').checked,
+        webhook_url: document.getElementById('webhook-url').value.trim(),
+        webhook_provider: document.getElementById('webhook-provider').value,
+        webhook_events: events,
+        webhook_deal_max_price_to_retail_ratio: ratio,
+        webhook_deal_min_drop_pct: minDrop,
+        webhook_deal_batch_size: batchSize,
+    };
+    await api('PUT', '/api/settings', data);
+    document.getElementById('webhook-saved').style.display = 'inline';
+    setTimeout(() => document.getElementById('webhook-saved').style.display = 'none', 2000);
 });
 
 // Search Queries

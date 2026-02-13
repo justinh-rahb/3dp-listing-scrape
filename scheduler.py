@@ -9,8 +9,9 @@ from urllib.parse import urlparse
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import db
+from notifier import send_webhook_event
 from scraper import KijijiScraper, RetailScraper
-from tracker import detect_brand, detect_model, lookup_msrp
+from tracker import compute_deals, detect_brand, detect_model, lookup_msrp
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,13 @@ def _to_usd(price: Optional[float], currency: Optional[str], fx_rates: dict) -> 
     return float(price) * float(rate)
 
 
+def _emit_event(event_type: str, payload: dict, settings: dict):
+    try:
+        send_webhook_event(event_type, payload, settings)
+    except Exception as e:
+        logger.warning(f"Webhook send failed for event={event_type}: {e}")
+
+
 def run_scrape(max_pages: Optional[int] = None,
                query_filter: Optional[str] = None,
                query_id: Optional[int] = None) -> dict:
@@ -58,6 +66,8 @@ def run_scrape(max_pages: Optional[int] = None,
         return {"error": "Scrape already in progress"}
 
     _is_running = True
+    conn = None
+    settings = {}
     try:
         conn = db.get_conn()
 
@@ -153,7 +163,30 @@ def run_scrape(max_pages: Optional[int] = None,
 
         db.increment_missed_runs(all_seen_ids, conn=conn)
         db.finish_scrape_run(run_id, total_found, total_new, total_price_changes, total_errors, conn=conn)
+
+        deal_ratio_max = float(settings.get("webhook_deal_max_price_to_retail_ratio", 0.9))
+        deal_drop_min = float(settings.get("webhook_deal_min_drop_pct", 15.0))
+        deal_batch_size = int(settings.get("webhook_deal_batch_size", 5))
+        qualifying_deals = []
+        for deal in compute_deals(db.get_listings({"active_only": True}, conn=conn)):
+            ratio_match = deal.price_to_retail_ratio is not None and deal.price_to_retail_ratio <= deal_ratio_max
+            drop_match = deal.price_drop_pct >= deal_drop_min
+            if ratio_match or drop_match:
+                qualifying_deals.append({
+                    "kijiji_id": deal.kijiji_id,
+                    "title": deal.title,
+                    "url": deal.url,
+                    "source": deal.source,
+                    "currency": deal.currency,
+                    "current_price": round(deal.current_price, 2),
+                    "price_drop_pct": round(deal.price_drop_pct, 2),
+                    "price_to_retail_ratio": round(deal.price_to_retail_ratio, 4) if deal.price_to_retail_ratio is not None else None,
+                })
+            if len(qualifying_deals) >= deal_batch_size:
+                break
+
         conn.close()
+        conn = None
 
         result = {
             "found": total_found,
@@ -163,11 +196,33 @@ def run_scrape(max_pages: Optional[int] = None,
             "finished_at": datetime.now(timezone.utc).isoformat(),
         }
         _last_result = result
+        _emit_event("scrape_completed", result, settings)
+        if total_errors > 0:
+            _emit_event("scrape_failed", {
+                "error": f"{total_errors} query errors during scrape run",
+                **result,
+            }, settings)
+        if qualifying_deals:
+            _emit_event("new_deal_detected", {
+                "count": len(qualifying_deals),
+                "deals": qualifying_deals,
+                "thresholds": {
+                    "max_price_to_retail_ratio": deal_ratio_max,
+                    "min_drop_pct": deal_drop_min,
+                },
+                "finished_at": result["finished_at"],
+            }, settings)
         logger.info(f"Scrape done: {result}")
         return result
 
     except Exception as e:
         logger.error(f"Scrape failed: {e}")
+        if conn:
+            conn.close()
+        _emit_event("scrape_failed", {
+            "error": str(e),
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+        }, settings)
         return {"error": str(e)}
     finally:
         _is_running = False

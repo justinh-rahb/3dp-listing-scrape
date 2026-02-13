@@ -145,6 +145,20 @@ Configure scraping behavior in Settings:
 - **Inactive Threshold**: Missed runs before marking a listing inactive
 - **FX Rates to USD**: Used for USD-equivalent price change detection (`fx_rates_to_usd`)
 
+### Webhook Notifications
+
+Webhook notifications can be configured in **Settings > General > Webhook Notifications**.
+
+Supported providers:
+- `generic` (canonical JSON payload)
+- `discord` (Discord webhook payload)
+- `google_chat` (Google Chat incoming webhook payload)
+
+Supported events:
+- `scrape_completed`
+- `new_deal_detected`
+- `scrape_failed`
+
 ## Aurora Tech Channel Integration (Currently Disabled)
 
 The Aurora Tech Channel integration has been temporarily disabled due to HTML parsing complexity. The website structure changes frequently, making reliable scraping difficult.
