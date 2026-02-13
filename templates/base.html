@@ -19,20 +19,31 @@
     <nav class="navbar navbar-expand-lg bg-body-tertiary border-bottom">
         <div class="container-fluid">
             <a class="navbar-brand" href="/">3DP Deal Tracker</a>
-            <div class="d-flex align-items-center gap-2">
-                <div class="navbar-nav">
-                    <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">Listings</a>
-                    <a class="nav-link {% if request.url.path == '/deals' %}active{% endif %}" href="/deals">Deals</a>
-                    <a class="nav-link {% if request.url.path == '/settings' %}active{% endif %}" href="/settings">Settings</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarContent" aria-controls="navbarContent" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarContent">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">Listings</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/deals' %}active{% endif %}" href="/deals">Deals</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/settings' %}active{% endif %}" href="/settings">Settings</a>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-2">
                     <a class="nav-link nav-icon-link" href="https://github.com/justinh-rahb/3dp-listing-scrape" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository" title="GitHub repository">
                         <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" fill="currentColor">
                             <path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.49-2.7-1.08-2.7-1.08-.37-.93-.89-1.18-.89-1.18-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.88-3.65-3.92 0-.87.31-1.58.82-2.14-.08-.2-.36-1.01.08-2.11 0 0 .67-.21 2.2.82a7.66 7.66 0 0 1 4 0c1.52-1.03 2.2-.82 2.2-.82.44 1.1.16 1.91.08 2.11.51.56.82 1.27.82 2.14 0 3.05-1.87 3.72-3.66 3.92.29.25.54.74.54 1.49v2.2c0 .21.14.46.55.38A8 8 0 0 0 8 0z"></path>
                         </svg>
                     </a>
+                    <button id="themeToggle" class="btn btn-sm theme-toggle-btn" type="button" aria-label="Toggle color mode">
+                        <span id="themeIconGlyph" aria-hidden="true">☾</span>
+                    </button>
                 </div>
-                <button id="themeToggle" class="btn btn-sm theme-toggle-btn" type="button" aria-label="Toggle color mode">
-                    <span id="themeIconGlyph" aria-hidden="true">☾</span>
-                </button>
             </div>
         </div>
     </nav>
@@ -65,6 +76,75 @@
                 applyTheme(next);
             });
         })();
+    </script>
+    <script>
+        async function toggleHide(kijiji_id, shouldHide) {
+            const btn = document.querySelector(`[data-kijiji-id="${kijiji_id}"]`);
+            if (!btn) return;
+
+            // Disable button during request
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = 'Processing...';
+
+            try {
+                const endpoint = shouldHide ? 'hide' : 'unhide';
+                const response = await fetch(`/api/listing/${kijiji_id}/${endpoint}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+
+                if (!response.ok) throw new Error('Request failed');
+
+                const data = await response.json();
+
+                // Update button state
+                btn.dataset.hidden = data.is_hidden;
+                btn.textContent = data.is_hidden ? 'Unhide' : 'Hide';
+
+                // Update badge in table row (if exists)
+                const row = btn.closest('tr');
+                if (row) {
+                    // Check if "show_hidden" filter is enabled
+                    const showHiddenCheckbox = document.getElementById('showHidden');
+                    const showHidden = showHiddenCheckbox && showHiddenCheckbox.checked;
+
+                    // If hiding and show_hidden filter is off, remove the row
+                    if (data.is_hidden && !showHidden) {
+                        row.remove();
+                        // Update listing count if function exists (only on index page)
+                        if (typeof updateListingCount === 'function') {
+                            updateListingCount();
+                        }
+                        return;
+                    }
+
+                    const titleCell = row.querySelector('td:nth-child(3)');
+                    const hiddenBadge = titleCell?.querySelector('.badge.bg-dark');
+
+                    if (data.is_hidden && !hiddenBadge) {
+                        // Add hidden badge
+                        const badge = document.createElement('span');
+                        badge.className = 'badge bg-dark ms-1';
+                        badge.textContent = 'Hidden';
+                        titleCell.appendChild(badge);
+                    } else if (!data.is_hidden && hiddenBadge) {
+                        // Remove hidden badge
+                        hiddenBadge.remove();
+                    }
+                }
+
+                // Update onclick for next action
+                btn.onclick = () => toggleHide(kijiji_id, !data.is_hidden);
+
+            } catch (error) {
+                console.error('Failed to toggle hide status:', error);
+                alert('Failed to update listing. Please refresh and try again.');
+                btn.textContent = originalText;
+            } finally {
+                btn.disabled = false;
+            }
+        }
     </script>
     {% block scripts %}{% endblock %}
 </body>

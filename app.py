@@ -150,6 +150,45 @@ async def unhide_listing(request: Request, kijiji_id: str):
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
 
+@app.post("/api/listing/{kijiji_id}/hide")
+async def api_hide_listing(kijiji_id: str):
+    """JSON endpoint for hiding listing without page refresh."""
+    db.set_listing_hidden(kijiji_id, True)
+    return {"ok": True, "kijiji_id": kijiji_id, "is_hidden": True}
+
+
+@app.post("/api/listing/{kijiji_id}/unhide")
+async def api_unhide_listing(kijiji_id: str):
+    """JSON endpoint for unhiding listing without page refresh."""
+    db.set_listing_hidden(kijiji_id, False)
+    return {"ok": True, "kijiji_id": kijiji_id, "is_hidden": False}
+
+
+class BulkHideRequest(BaseModel):
+    kijiji_ids: list[str]
+    hide: bool
+
+
+@app.post("/api/listings/bulk-hide")
+async def api_bulk_hide(data: BulkHideRequest):
+    """Bulk hide/unhide multiple listings."""
+    conn = db.get_conn()
+    try:
+        for kijiji_id in data.kijiji_ids:
+            db.set_listing_hidden(kijiji_id, data.hide, conn)
+        conn.commit()
+        return {
+            "ok": True,
+            "count": len(data.kijiji_ids),
+            "is_hidden": data.hide
+        }
+    except Exception as e:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @app.get("/deals", response_class=HTMLResponse)
 async def deals_page(request: Request):
     listings = db.get_listings({"active_only": True})

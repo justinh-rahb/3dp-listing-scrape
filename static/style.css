@@ -44,3 +44,58 @@
     font-size: 1.05rem;
     line-height: 1;
 }
+
+/* Bulk actions styling */
+#bulkActionsBar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+/* Checkbox column styling */
+.listing-checkbox {
+    cursor: pointer;
+}
+
+/* Highlight selected rows */
+tr:has(.listing-checkbox:checked) {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+[data-bs-theme="dark"] tr:has(.listing-checkbox:checked) {
+    background-color: rgba(13, 110, 253, 0.15);
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    /* Wrap bulk action buttons */
+    #bulkActionsBar .d-flex {
+        gap: 0.5rem;
+    }
+
+    #bulkActionsBar button {
+        font-size: 0.875rem;
+    }
+
+    /* Reduce navbar brand font size */
+    .navbar-brand {
+        font-size: 1rem;
+    }
+
+    /* Touch-friendly checkbox sizing */
+    .form-check-input {
+        width: 1.25em;
+        height: 1.25em;
+    }
+
+    /* Smaller action buttons on mobile */
+    .btn-sm {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+
+    /* Ensure table scrolls smoothly */
+    .table-responsive {
+        -webkit-overflow-scrolling: touch;
+    }
+}

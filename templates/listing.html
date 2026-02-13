@@ -13,15 +13,12 @@
 
         <h4>{{ listing.title }}</h4>
         <div class="mb-2">
-            {% if listing.is_hidden %}
-            <form method="post" action="/listing/{{ listing.kijiji_id }}/unhide" class="d-inline">
-                <button type="submit" class="btn btn-outline-secondary btn-sm">Unhide listing</button>
-            </form>
-            {% else %}
-            <form method="post" action="/listing/{{ listing.kijiji_id }}/hide" class="d-inline">
-                <button type="submit" class="btn btn-outline-secondary btn-sm">Hide listing</button>
-            </form>
-            {% endif %}
+            <button onclick="toggleHide('{{ listing.kijiji_id }}', {{ 'false' if listing.is_hidden else 'true' }})"
+                    class="btn btn-outline-secondary btn-sm"
+                    data-kijiji-id="{{ listing.kijiji_id }}"
+                    data-hidden="{{ 'true' if listing.is_hidden else 'false' }}">
+                {{ 'Unhide listing' if listing.is_hidden else 'Hide listing' }}
+            </button>
         </div>
 
         <div class="d-flex gap-3 mb-3">

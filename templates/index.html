@@ -111,10 +111,28 @@
             <h5 class="mb-0">{{ listings|length }} Listings</h5>
         </div>
 
+        <div id="bulkActionsBar" class="alert alert-info py-2 px-3 mb-2" style="display: none;">
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span id="selectedCount">0 selected</span>
+                <button class="btn btn-sm btn-primary" onclick="bulkHide()">
+                    Hide Selected
+                </button>
+                <button class="btn btn-sm btn-outline-primary" onclick="bulkUnhide()">
+                    Unhide Selected
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                    Clear Selection
+                </button>
+            </div>
+        </div>
+
         <div class="table-responsive">
             <table class="table table-sm table-hover">
                 <thead>
                     <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" id="selectAll" class="form-check-input" onchange="toggleSelectAll(this)">
+                        </th>
                         <th></th>
                         <th><a href="{{ sort_urls.title }}" class="text-decoration-none link-body-emphasis">Title {{ sort_icons.title }}</a></th>
                         <th><a href="{{ sort_urls.price }}" class="text-decoration-none link-body-emphasis">Price {{ sort_icons.price }}</a></th>
@@ -128,6 +146,12 @@
                 <tbody>
                     {% for listing in listings %}
                     <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input listing-checkbox"
+                                   value="{{ listing.kijiji_id }}"
+                                   data-hidden="{{ 'true' if listing.is_hidden else 'false' }}"
+                                   onchange="updateBulkActions()">
+                        </td>
                         <td>
                             {% set images = listing.image_urls|from_json %}
                             {% if images %}
@@ -164,15 +188,12 @@
                         <td class="text-truncate" style="max-width: 150px;">{{ listing.location or '' }}</td>
                         <td>{{ (listing.first_seen or '')[:10] }}</td>
                         <td class="text-end">
-                            {% if listing.is_hidden %}
-                            <form method="post" action="/listing/{{ listing.kijiji_id }}/unhide" class="d-inline">
-                                <button type="submit" class="btn btn-outline-secondary btn-sm">Unhide</button>
-                            </form>
-                            {% else %}
-                            <form method="post" action="/listing/{{ listing.kijiji_id }}/hide" class="d-inline">
-                                <button type="submit" class="btn btn-outline-secondary btn-sm">Hide</button>
-                            </form>
-                            {% endif %}
+                            <button onclick="toggleHide('{{ listing.kijiji_id }}', {{ 'false' if listing.is_hidden else 'true' }})"
+                                    class="btn btn-outline-secondary btn-sm"
+                                    data-kijiji-id="{{ listing.kijiji_id }}"
+                                    data-hidden="{{ 'true' if listing.is_hidden else 'false' }}">
+                                {{ 'Unhide' if listing.is_hidden else 'Hide' }}
+                            </button>
                         </td>
                     </tr>
                     {% endfor %}
@@ -187,4 +208,145 @@
         {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Update listing count
+function updateListingCount() {
+    const count = document.querySelectorAll('tbody tr').length;
+    const countElement = document.querySelector('h5.mb-0');
+    if (countElement) {
+        countElement.textContent = `${count} Listings`;
+    }
+}
+
+// Track selected items
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.listing-checkbox:checked');
+    const count = checkboxes.length;
+    const bar = document.getElementById('bulkActionsBar');
+    const countSpan = document.getElementById('selectedCount');
+
+    if (count > 0) {
+        bar.style.display = 'block';
+        countSpan.textContent = `${count} selected`;
+    } else {
+        bar.style.display = 'none';
+    }
+
+    // Update "select all" checkbox state
+    const selectAll = document.getElementById('selectAll');
+    const allCheckboxes = document.querySelectorAll('.listing-checkbox');
+    selectAll.checked = allCheckboxes.length > 0 && checkboxes.length === allCheckboxes.length;
+    selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
+}
+
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.listing-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateBulkActions();
+}
+
+function clearSelection() {
+    document.querySelectorAll('.listing-checkbox').forEach(cb => {
+        cb.checked = false;
+    });
+    document.getElementById('selectAll').checked = false;
+    updateBulkActions();
+}
+
+async function bulkHide() {
+    await performBulkAction(true);
+}
+
+async function bulkUnhide() {
+    await performBulkAction(false);
+}
+
+async function performBulkAction(hide) {
+    const checkboxes = document.querySelectorAll('.listing-checkbox:checked');
+    const kijiji_ids = Array.from(checkboxes).map(cb => cb.value);
+
+    if (kijiji_ids.length === 0) return;
+
+    // Disable all controls
+    const bar = document.getElementById('bulkActionsBar');
+    const buttons = bar.querySelectorAll('button');
+    buttons.forEach(btn => btn.disabled = true);
+
+    try {
+        const response = await fetch('/api/listings/bulk-hide', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({kijiji_ids, hide})
+        });
+
+        if (!response.ok) throw new Error('Bulk action failed');
+
+        const data = await response.json();
+
+        // Check if "show_hidden" filter is enabled
+        const showHiddenCheckbox = document.getElementById('showHidden');
+        const showHidden = showHiddenCheckbox && showHiddenCheckbox.checked;
+
+        // Update UI for affected rows
+        checkboxes.forEach(checkbox => {
+            const row = checkbox.closest('tr');
+
+            // If hiding items and show_hidden filter is off, remove the row
+            if (data.is_hidden && !showHidden) {
+                row.remove();
+                return;
+            }
+
+            const titleCell = row.querySelector('td:nth-child(3)');
+            const hiddenBadge = titleCell?.querySelector('.badge.bg-dark');
+            const hideBtn = row.querySelector('[data-kijiji-id]');
+
+            if (data.is_hidden && !hiddenBadge) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-dark ms-1';
+                badge.textContent = 'Hidden';
+                titleCell.appendChild(badge);
+            } else if (!data.is_hidden && hiddenBadge) {
+                hiddenBadge.remove();
+            }
+
+            // Update hide button
+            if (hideBtn) {
+                hideBtn.textContent = data.is_hidden ? 'Unhide' : 'Hide';
+                hideBtn.dataset.hidden = data.is_hidden;
+                hideBtn.onclick = () => toggleHide(checkbox.value, !data.is_hidden);
+            }
+
+            checkbox.dataset.hidden = data.is_hidden;
+        });
+
+        clearSelection();
+        updateListingCount();
+
+        // Show success message
+        const successMsg = document.createElement('div');
+        successMsg.className = 'alert alert-success alert-dismissible fade show';
+        successMsg.innerHTML = `
+            <strong>Success!</strong> ${data.count} listing(s) ${hide ? 'hidden' : 'unhidden'}.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.querySelector('main').prepend(successMsg);
+        setTimeout(() => successMsg.remove(), 3000);
+
+    } catch (error) {
+        console.error('Bulk action error:', error);
+        alert(`Failed to ${hide ? 'hide' : 'unhide'} listings. Please try again.`);
+    } finally {
+        buttons.forEach(btn => btn.disabled = false);
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', updateBulkActions);
+</script>
 {% endblock %}
