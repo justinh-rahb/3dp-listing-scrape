@@ -68,7 +68,7 @@ def parse_optional_float(value: Optional[str]) -> Optional[float]:
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, brand: Optional[str] = None,
                 min_price: Optional[str] = None, max_price: Optional[str] = None,
-                location: Optional[str] = None, search: Optional[str] = None,
+                search: Optional[str] = None,
                 active_only: str = "1", show_hidden: str = "0", sort_by: str = "last_seen"):
     sort_aliases = {
         "last_seen": "last_seen_desc",
@@ -85,7 +85,6 @@ async def index(request: Request, brand: Optional[str] = None,
         "brand": brand,
         "min_price": min_price_value,
         "max_price": max_price_value,
-        "location": location,
         "search": search,
         "active_only": active_only == "1",
         "show_hidden": show_hidden == "1",
@@ -97,7 +96,6 @@ async def index(request: Request, brand: Optional[str] = None,
         "price": ("price_asc", "price_desc"),
         "change": ("price_drop_asc", "price_drop_desc"),
         "brand": ("brand_asc", "brand_desc"),
-        "location": ("location_asc", "location_desc"),
         "first_seen": ("first_seen_asc", "first_seen_desc"),
     }
     sort_urls = {}

@@ -4,11 +4,12 @@ import logging
 import threading
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import db
-from scraper import KijijiScraper
+from scraper import KijijiScraper, RetailScraper
 from tracker import detect_brand, detect_model, lookup_msrp
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,29 @@ _scheduler: Optional[BackgroundScheduler] = None
 _lock = threading.Lock()
 _last_result: Optional[dict] = None
 _is_running = False
+
+
+def _source_from_url(url: str) -> str:
+    host = urlparse(url).netloc.lower()
+    if "kijiji.ca" in host:
+        return "kijiji"
+    if "sovol3d.com" in host:
+        return "sovol"
+    if "formbot3d.com" in host:
+        return "formbot"
+    return "unknown"
+
+
+def _to_usd(price: Optional[float], currency: Optional[str], fx_rates: dict) -> Optional[float]:
+    if price is None:
+        return None
+    curr = (currency or "USD").upper()
+    if curr == "USD":
+        return float(price)
+    rate = fx_rates.get(curr)
+    if rate in (None, 0):
+        return None
+    return float(price) * float(rate)
 
 
 def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = None) -> dict:
@@ -39,8 +63,10 @@ def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = No
             max_pages = settings.get("max_pages_per_query", 5)
         delay_min = settings.get("request_delay_min", 2.0)
         delay_max = settings.get("request_delay_max", 5.0)
+        fx_rates = settings.get("fx_rates_to_usd", {"USD": 1.0})
 
-        scraper = KijijiScraper(delay_min=delay_min, delay_max=delay_max, max_pages=max_pages)
+        kijiji_scraper = KijijiScraper(delay_min=delay_min, delay_max=delay_max, max_pages=max_pages)
+        retail_scraper = RetailScraper(delay_min=delay_min, delay_max=delay_max)
 
         # Get enabled search queries from DB
         queries = db.get_search_queries(enabled_only=True, conn=conn)
@@ -61,8 +87,12 @@ def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = No
 
         for q in queries:
             logger.info(f"Searching: {q['label']} ...")
+            source = _source_from_url(q["url"])
             try:
-                listings = scraper.scrape_search(q["url"], max_pages=max_pages)
+                if source == "kijiji":
+                    listings = kijiji_scraper.scrape_search(q["url"], max_pages=max_pages)
+                else:
+                    listings = retail_scraper.scrape_url(q["url"])
             except Exception as e:
                 logger.error(f"Error scraping {q['label']}: {e}")
                 total_errors += 1
@@ -80,19 +110,25 @@ def run_scrape(max_pages: Optional[int] = None, query_filter: Optional[str] = No
 
                 existing = db.get_listing(listing.kijiji_id, conn=conn)
                 if existing and existing["current_price"] is not None and listing.price is not None:
-                    if existing["current_price"] != listing.price:
+                    old_usd = _to_usd(existing["current_price"], existing["currency"], fx_rates)
+                    new_usd = _to_usd(listing.price, listing.currency, fx_rates)
+                    if old_usd is not None and new_usd is not None and round(old_usd, 2) != round(new_usd, 2):
                         total_price_changes += 1
-                        direction = "down" if listing.price < existing["current_price"] else "up"
+                        direction = "down" if new_usd < old_usd else "up"
                         logger.info(
-                            f"  Price {direction}: {listing.title[:50]} "
-                            f"${existing['current_price']:.0f} -> ${listing.price:.0f}"
+                            f"  USD price {direction}: {listing.title[:50]} "
+                            f"${old_usd:.2f} -> ${new_usd:.2f}"
                         )
 
                 listing_data = {
                     "kijiji_id": listing.kijiji_id,
+                    "source": listing.source or source,
                     "url": listing.url,
                     "title": listing.title,
                     "price": listing.price,
+                    "currency": listing.currency,
+                    "nominal_price": listing.nominal_price,
+                    "on_sale": listing.on_sale,
                     "description": listing.description,
                     "seller_name": listing.seller_name,
                     "location": listing.location,

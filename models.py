@@ -6,11 +6,15 @@ from typing import Optional
 
 @dataclass
 class ScrapedListing:
-    """Raw data extracted from a Kijiji listing."""
+    """Raw data extracted from a listing source."""
     kijiji_id: str
     url: str
     title: str
     price: Optional[float] = None
+    currency: str = "CAD"
+    nominal_price: Optional[float] = None
+    on_sale: bool = False
+    source: str = "kijiji"
     description: Optional[str] = None
     seller_name: Optional[str] = None
     location: Optional[str] = None
@@ -29,6 +33,9 @@ class Deal:
     price_drop_abs: float
     price_drop_pct: float
     days_on_market: int
+    nominal_price: Optional[float] = None
+    currency: str = "USD"
+    source: str = "kijiji"
     brand: Optional[str] = None
     msrp: Optional[float] = None
     retail_price: Optional[float] = None

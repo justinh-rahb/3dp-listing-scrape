@@ -23,16 +23,16 @@
 
         <div class="d-flex gap-3 mb-3">
             {% if listing.current_price is not none %}
-            <h3 class="mb-0">${{ "%.0f"|format(listing.current_price) }}</h3>
+            <h3 class="mb-0">{{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.current_price) }}</h3>
             {% else %}
             <h3 class="mb-0">Contact for price</h3>
             {% endif %}
 
-            {% if listing.original_price and listing.current_price and listing.original_price != listing.current_price %}
-                {% set drop = listing.original_price - listing.current_price %}
+            {% if listing.nominal_price and listing.current_price and listing.nominal_price != listing.current_price %}
+                {% set drop = listing.nominal_price - listing.current_price %}
                 {% if drop > 0 %}
                 <span class="badge bg-success fs-6 align-self-center">
-                    -${{ "%.0f"|format(drop) }} ({{ "%.1f"|format(drop / listing.original_price * 100) }}% off)
+                    -{{ listing.currency or 'USD' }} ${{ "%.0f"|format(drop) }} ({{ "%.1f"|format(drop / listing.nominal_price * 100) }}% off)
                 </span>
                 {% endif %}
             {% endif %}
@@ -48,18 +48,23 @@
         <table class="table table-sm w-auto">
             <tr><td class="text-muted">Brand</td><td>{{ (listing.brand or 'Unknown')|title }}</td></tr>
             <tr><td class="text-muted">Model</td><td>{{ listing.model or 'Unknown' }}</td></tr>
+            <tr><td class="text-muted">Source</td><td>{{ (listing.source or 'kijiji')|upper }}</td></tr>
             <tr><td class="text-muted">Location</td><td>{{ listing.location or 'Unknown' }}</td></tr>
             <tr><td class="text-muted">First seen</td><td>{{ (listing.first_seen or '')[:10] }}</td></tr>
             <tr><td class="text-muted">Last seen</td><td>{{ (listing.last_seen or '')[:10] }}</td></tr>
             <tr><td class="text-muted">Original price</td><td>
-                {% if listing.original_price is not none %}${{ "%.0f"|format(listing.original_price) }}{% else %}N/A{% endif %}
+                {% if listing.original_price is not none %}{{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.original_price) }}{% else %}N/A{% endif %}
+            </td></tr>
+            <tr><td class="text-muted">Nominal price</td><td>
+                {% if listing.nominal_price is not none %}{{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.nominal_price) }}{% else %}N/A{% endif %}
             </td></tr>
             <tr><td class="text-muted">Status</td><td>
                 {% if listing.is_active %}<span class="badge bg-success">Active</span>
                 {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
                 {% if listing.is_hidden %}<span class="badge bg-dark">Hidden</span>{% endif %}
+                {% if listing.on_sale %}<span class="badge bg-danger">Sale</span>{% endif %}
             </td></tr>
-            <tr><td class="text-muted">Kijiji</td><td><a href="{{ listing.url }}" target="_blank">View on Kijiji</a></td></tr>
+            <tr><td class="text-muted">Link</td><td><a href="{{ listing.url }}" target="_blank">View listing</a></td></tr>
         </table>
 
         {% if listing.description %}
@@ -105,7 +110,7 @@ fetch('/api/price-history/{{ listing.kijiji_id }}')
             data: {
                 labels: data.dates,
                 datasets: [{
-                    label: 'Price ($)',
+                    label: 'Price ({{ listing.currency or "USD" }})',
                     data: data.prices,
                     borderColor: '#0d6efd',
                     backgroundColor: 'rgba(13, 110, 253, 0.1)',
@@ -119,7 +124,7 @@ fetch('/api/price-history/{{ listing.kijiji_id }}')
                 scales: {
                     y: {
                         beginAtZero: false,
-                        ticks: { callback: v => '$' + v }
+                        ticks: { callback: v => '{{ listing.currency or "USD" }} $' + v }
                     }
                 },
                 plugins: {

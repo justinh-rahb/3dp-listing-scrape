@@ -21,6 +21,7 @@ def init_db(db_path: str = DB_PATH):
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS listings (
             kijiji_id       TEXT PRIMARY KEY,
+            source          TEXT NOT NULL DEFAULT 'kijiji',
             url             TEXT NOT NULL,
             title           TEXT NOT NULL,
             description     TEXT,
@@ -37,7 +38,10 @@ def init_db(db_path: str = DB_PATH):
             model           TEXT,
             msrp            REAL,
             current_price   REAL,
-            original_price  REAL
+            original_price  REAL,
+            nominal_price   REAL,
+            on_sale         INTEGER DEFAULT 0,
+            currency        TEXT NOT NULL DEFAULT 'CAD'
         );
 
         CREATE TABLE IF NOT EXISTS price_snapshots (
@@ -110,7 +114,16 @@ def _ensure_schema_updates(conn: sqlite3.Connection):
     }
     if "is_hidden" not in listing_columns:
         conn.execute("ALTER TABLE listings ADD COLUMN is_hidden INTEGER DEFAULT 0")
+    if "source" not in listing_columns:
+        conn.execute("ALTER TABLE listings ADD COLUMN source TEXT NOT NULL DEFAULT 'kijiji'")
+    if "currency" not in listing_columns:
+        conn.execute("ALTER TABLE listings ADD COLUMN currency TEXT NOT NULL DEFAULT 'CAD'")
+    if "nominal_price" not in listing_columns:
+        conn.execute("ALTER TABLE listings ADD COLUMN nominal_price REAL")
+    if "on_sale" not in listing_columns:
+        conn.execute("ALTER TABLE listings ADD COLUMN on_sale INTEGER DEFAULT 0")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_hidden ON listings(is_hidden)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source)")
 
 
 def _seed_defaults(conn: sqlite3.Connection):
@@ -128,6 +141,19 @@ def _seed_defaults(conn: sqlite3.Connection):
     existing = conn.execute("SELECT COUNT(*) as c FROM search_queries").fetchone()["c"]
     if existing == 0:
         for q in DEFAULT_SEARCH_QUERIES:
+            conn.execute(
+                "INSERT INTO search_queries (url, label, enabled) VALUES (?, ?, 1)",
+                (q["url"], q["label"])
+            )
+    else:
+        # Add any newly introduced default queries without duplicating existing URLs.
+        existing_urls = {
+            row["url"]
+            for row in conn.execute("SELECT url FROM search_queries").fetchall()
+        }
+        for q in DEFAULT_SEARCH_QUERIES:
+            if q["url"] in existing_urls:
+                continue
             conn.execute(
                 "INSERT INTO search_queries (url, label, enabled) VALUES (?, ?, 1)",
                 (q["url"], q["label"])
@@ -393,13 +419,14 @@ def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None
 
     if is_new:
         conn.execute("""
-            INSERT INTO listings (kijiji_id, url, title, description, seller_name,
+            INSERT INTO listings (kijiji_id, source, url, title, description, seller_name,
                                   location, image_urls, listing_date, first_seen, last_seen,
                                   is_active, is_hidden, missed_runs, brand, model, msrp,
-                                  current_price, original_price)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?, ?, ?)
+                                  current_price, original_price, nominal_price, on_sale, currency)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             listing_data["kijiji_id"],
+            listing_data.get("source", "kijiji"),
             listing_data["url"],
             listing_data["title"],
             listing_data.get("description"),
@@ -413,11 +440,14 @@ def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None
             listing_data.get("msrp"),
             listing_data.get("price"),
             listing_data.get("price"),
+            listing_data.get("nominal_price"),
+            1 if listing_data.get("on_sale", False) else 0,
+            listing_data.get("currency", "CAD").upper(),
         ))
     else:
         conn.execute("""
             UPDATE listings SET
-                url = ?, title = ?, description = COALESCE(?, description),
+                source = ?, url = ?, title = ?, description = COALESCE(?, description),
                 seller_name = COALESCE(?, seller_name),
                 location = COALESCE(?, location),
                 image_urls = CASE WHEN ? != '[]' THEN ? ELSE image_urls END,
@@ -425,9 +455,13 @@ def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None
                 last_seen = ?, is_active = 1, missed_runs = 0,
                 brand = COALESCE(?, brand), model = COALESCE(?, model),
                 msrp = COALESCE(?, msrp),
-                current_price = COALESCE(?, current_price)
+                current_price = COALESCE(?, current_price),
+                nominal_price = COALESCE(?, nominal_price),
+                on_sale = ?,
+                currency = COALESCE(?, currency)
             WHERE kijiji_id = ?
         """, (
+            listing_data.get("source", "kijiji"),
             listing_data["url"],
             listing_data["title"],
             listing_data.get("description"),
@@ -440,6 +474,9 @@ def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None
             listing_data.get("model"),
             listing_data.get("msrp"),
             listing_data.get("price"),
+            listing_data.get("nominal_price"),
+            1 if listing_data.get("on_sale", False) else 0,
+            listing_data.get("currency", "CAD").upper(),
             listing_data["kijiji_id"],
         ))
 

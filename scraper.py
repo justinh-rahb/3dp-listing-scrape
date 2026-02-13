@@ -1,5 +1,6 @@
 """Core Kijiji scraping logic."""
 
+import hashlib
 import json
 import logging
 import random
@@ -462,3 +463,315 @@ class KijijiScraper:
             detail["listing_date"] = date_el.get("datetime", date_el.get_text(strip=True))
 
         return detail
+
+
+class RetailScraper:
+    """Scraper for retailer/manufacturer pages."""
+
+    def __init__(self, session: Optional[requests.Session] = None,
+                 delay_min: float = 1.0, delay_max: float = 2.0):
+        self.session = session or requests.Session()
+        self.delay_min = delay_min
+        self.delay_max = delay_max
+        self._rotate_ua()
+
+    def _rotate_ua(self):
+        self.session.headers.update({"User-Agent": random.choice(USER_AGENTS)})
+
+    def _delay(self):
+        time.sleep(random.uniform(self.delay_min, self.delay_max))
+
+    def _get(self, url: str) -> str:
+        self._rotate_ua()
+        self._delay()
+        try:
+            resp = self.session.get(url, timeout=30)
+        except requests.RequestException as e:
+            raise RuntimeError(f"Request failed for {url}: {e}") from e
+        if resp.status_code != 200:
+            raise RuntimeError(f"Got {resp.status_code} for {url}")
+        return resp.text
+
+    def scrape_url(self, url: str) -> list[ScrapedListing]:
+        if "sovol3d.com" in url:
+            return self._scrape_sovol_zero(url)
+        if "formbot3d.com" in url:
+            if "/products/" in urlparse(url).path:
+                return self._scrape_formbot_product(url)
+            return self._scrape_formbot_vorons(url)
+        logger.warning(f"No retail scraper registered for url={url}")
+        return []
+
+    def _stable_id(self, source: str, url: str) -> str:
+        digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+        return f"{source}:{digest}"
+
+    def _parse_amount(self, value) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.strip().replace(",", "")
+            cleaned = re.sub(r"[^\d.]", "", cleaned)
+            if cleaned == "":
+                return None
+            try:
+                return float(cleaned)
+            except ValueError:
+                return None
+        return None
+
+    def _extract_currency(self, text: str, default: str = "USD") -> str:
+        lowered = text.lower()
+        if "cad" in lowered:
+            return "CAD"
+        if "usd" in lowered or "$" in lowered:
+            return "USD"
+        return default
+
+    def _extract_all_prices(self, text: str) -> list[float]:
+        amounts = re.findall(r"\$\s*([\d,]+(?:\.\d{1,2})?)", text)
+        prices = []
+        for amount in amounts:
+            try:
+                prices.append(float(amount.replace(",", "")))
+            except ValueError:
+                continue
+        return prices
+
+    def _json_ld_blocks(self, soup: BeautifulSoup) -> list[dict]:
+        blocks = []
+        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+            raw = script.string or script.get_text()
+            if not raw:
+                continue
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, list):
+                blocks.extend(item for item in parsed if isinstance(item, dict))
+            elif isinstance(parsed, dict):
+                blocks.append(parsed)
+        return blocks
+
+    def _scrape_sovol_zero(self, url: str) -> list[ScrapedListing]:
+        html = self._get(url)
+
+        soup = BeautifulSoup(html, "lxml")
+        title = None
+        current_price = None
+        nominal_price = None
+        currency = "USD"
+        image_urls: list[str] = []
+
+        for block in self._json_ld_blocks(soup):
+            if block.get("@type") != "Product":
+                continue
+            title = block.get("name") or title
+            image_data = block.get("image")
+            if isinstance(image_data, str) and image_data:
+                image_urls.append(urljoin(url, image_data))
+            elif isinstance(image_data, list):
+                for img in image_data:
+                    if isinstance(img, str) and img:
+                        image_urls.append(urljoin(url, img))
+                    elif isinstance(img, dict):
+                        img_url = img.get("url") or img.get("contentUrl") or img.get("src")
+                        if isinstance(img_url, str) and img_url:
+                            image_urls.append(urljoin(url, img_url))
+            elif isinstance(image_data, dict):
+                img_url = image_data.get("url") or image_data.get("contentUrl") or image_data.get("src")
+                if isinstance(img_url, str) and img_url:
+                    image_urls.append(urljoin(url, img_url))
+            offers = block.get("offers")
+            offer_items = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
+            for offer in offer_items:
+                price = self._parse_amount(offer.get("price"))
+                if price is not None:
+                    current_price = price if current_price is None else min(current_price, price)
+                price_currency = offer.get("priceCurrency")
+                if isinstance(price_currency, str) and price_currency.strip():
+                    currency = price_currency.strip().upper()
+
+        if not title:
+            title_tag = soup.find(["h1", "title"])
+            title = title_tag.get_text(strip=True) if title_tag else "Sovol Zero 3D Printer"
+
+        if current_price is None:
+            price_candidates = self._extract_all_prices(soup.get_text(" ", strip=True))
+            if price_candidates:
+                current_price = min(price_candidates)
+                nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
+
+        # Shopify pages often include compare-at price in source JSON.
+        if nominal_price is None:
+            compare_match = re.search(r'"compare_at_price"\s*:\s*"?(?P<v>\d+)"?', html)
+            if compare_match and current_price is not None:
+                raw = float(compare_match.group("v"))
+                candidate = raw / 100.0 if raw > 10000 else raw
+                if candidate > current_price:
+                    nominal_price = candidate
+
+        if not image_urls:
+            og_img = soup.find("meta", attrs={"property": "og:image"})
+            if og_img and og_img.get("content"):
+                image_urls.append(urljoin(url, og_img["content"]))
+        if not image_urls:
+            og_img_secure = soup.find("meta", attrs={"property": "og:image:secure_url"})
+            if og_img_secure and og_img_secure.get("content"):
+                image_urls.append(urljoin(url, og_img_secure["content"]))
+        if not image_urls:
+            twitter_img = soup.find("meta", attrs={"name": "twitter:image"})
+            if twitter_img and twitter_img.get("content"):
+                image_urls.append(urljoin(url, twitter_img["content"]))
+        if not image_urls:
+            featured_match = re.search(r'"featured_image"\s*:\s*"(?P<img>[^"]+)"', html)
+            if featured_match:
+                image_urls.append(urljoin(url, featured_match.group("img")))
+        if not image_urls:
+            # Last-resort: capture first Shopify CDN image URL from page source.
+            cdn_match = re.search(
+                r'(https?:)?//cdn\.shopify\.com/[^"\'\s>]+\.(?:jpg|jpeg|png|webp)',
+                html,
+                flags=re.IGNORECASE,
+            )
+            if cdn_match:
+                image_urls.append(urljoin(url, cdn_match.group(0)))
+
+        # De-duplicate while preserving order.
+        seen = set()
+        deduped_images = []
+        for img in image_urls:
+            if img in seen:
+                continue
+            seen.add(img)
+            deduped_images.append(img)
+
+        listing = ScrapedListing(
+            kijiji_id=self._stable_id("sovol", url),
+            url=url,
+            title=title,
+            price=current_price,
+            currency=currency,
+            nominal_price=nominal_price,
+            on_sale=nominal_price is not None and current_price is not None and nominal_price > current_price,
+            source="sovol",
+            location="Online",
+            image_urls=deduped_images[:10],
+        )
+        return [listing]
+
+    def _scrape_formbot_vorons(self, url: str) -> list[ScrapedListing]:
+        html = self._get(url)
+
+        soup = BeautifulSoup(html, "lxml")
+        listings = []
+        seen_urls = set()
+
+        for link in soup.find_all("a", href=True):
+            href = link.get("href", "")
+            if "/products/" not in href:
+                continue
+            product_url = urljoin(url, href.split("?")[0])
+            if product_url in seen_urls:
+                continue
+            seen_urls.add(product_url)
+
+            card_text = link.get_text(" ", strip=True)
+            if not card_text:
+                continue
+            if "voron" not in card_text.lower():
+                continue
+            try:
+                listings.extend(self._scrape_formbot_product(product_url))
+            except Exception as e:
+                logger.debug(f"Failed to parse formbot product {product_url}: {e}")
+                continue
+
+        return listings
+
+    def _scrape_formbot_product(self, url: str) -> list[ScrapedListing]:
+        html = self._get(url)
+        soup = BeautifulSoup(html, "lxml")
+
+        title = None
+        current_price = None
+        nominal_price = None
+        currency = "USD"
+        image_urls: list[str] = []
+
+        for block in self._json_ld_blocks(soup):
+            if block.get("@type") != "Product":
+                continue
+            title = block.get("name") or title
+            image_data = block.get("image")
+            if isinstance(image_data, str) and image_data:
+                image_urls.append(urljoin(url, image_data))
+            elif isinstance(image_data, list):
+                for img in image_data:
+                    if isinstance(img, str) and img:
+                        image_urls.append(urljoin(url, img))
+                    elif isinstance(img, dict):
+                        img_url = img.get("url") or img.get("contentUrl") or img.get("src")
+                        if isinstance(img_url, str) and img_url:
+                            image_urls.append(urljoin(url, img_url))
+            elif isinstance(image_data, dict):
+                img_url = image_data.get("url") or image_data.get("contentUrl") or image_data.get("src")
+                if isinstance(img_url, str) and img_url:
+                    image_urls.append(urljoin(url, img_url))
+
+            offers = block.get("offers")
+            offer_items = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
+            for offer in offer_items:
+                price = self._parse_amount(offer.get("price"))
+                if price is not None:
+                    current_price = price if current_price is None else min(current_price, price)
+                price_currency = offer.get("priceCurrency")
+                if isinstance(price_currency, str) and price_currency.strip():
+                    currency = price_currency.strip().upper()
+
+        if not title:
+            title_tag = soup.find(["h1", "title"])
+            title = title_tag.get_text(strip=True) if title_tag else "Formbot Voron Kit"
+
+        if current_price is None:
+            price_candidates = self._extract_all_prices(soup.get_text(" ", strip=True))
+            if price_candidates:
+                current_price = min(price_candidates)
+                nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
+
+        if nominal_price is None:
+            compare_match = re.search(r'"compare_at_price"\s*:\s*"?(?P<v>\d+)"?', html)
+            if compare_match and current_price is not None:
+                raw = float(compare_match.group("v"))
+                candidate = raw / 100.0 if raw > 10000 else raw
+                if candidate > current_price:
+                    nominal_price = candidate
+
+        if not image_urls:
+            og_img = soup.find("meta", attrs={"property": "og:image"})
+            if og_img and og_img.get("content"):
+                image_urls.append(urljoin(url, og_img["content"]))
+
+        seen = set()
+        deduped_images = []
+        for img in image_urls:
+            if img in seen:
+                continue
+            seen.add(img)
+            deduped_images.append(img)
+
+        return [ScrapedListing(
+            kijiji_id=self._stable_id("formbot", url),
+            url=url,
+            title=title,
+            price=current_price,
+            currency=currency,
+            nominal_price=nominal_price,
+            on_sale=nominal_price is not None and current_price is not None and nominal_price > current_price,
+            source="formbot",
+            location="Online",
+            image_urls=deduped_images[:10],
+        )]

@@ -27,6 +27,8 @@ DEFAULT_SETTINGS = {
     "request_delay_min": 2.0,
     "request_delay_max": 5.0,
     "inactive_threshold": 3,
+    # Used for USD-equivalent change detection for non-USD listings.
+    "fx_rates_to_usd": {"USD": 1.0, "CAD": 0.74},
     # Production-friendly default: start scheduler automatically with the server.
     "scheduler_enabled": True,
 }
@@ -40,6 +42,27 @@ DEFAULT_SEARCH_QUERIES = [
     {"url": "https://www.kijiji.ca/b-hamilton/ender-3/k0l80014", "label": "ender 3"},
     {"url": "https://www.kijiji.ca/b-hamilton/anycubic/k0l80014", "label": "anycubic"},
     {"url": "https://www.kijiji.ca/b-hamilton/voron/k0l80014", "label": "voron"},
+    {"url": "https://www.sovol3d.com/products/sovol-zero-3d-printer?variant=50760656060725", "label": "sovol zero"},
+    {
+        "url": "https://www.formbot3d.com/products/voron-series-salad-fork-180mm-printers-for-ants-scaled-down-trident-high-quality-corexy-3d-printer-kit?VariantsId=11156",
+        "label": "formbot salad fork",
+    },
+    {
+        "url": "https://www.formbot3d.com/products/voron-micron-r1-180mm-high-quality-corexy-3d-printer-kit-latest-version?VariantsId=11069",
+        "label": "formbot micron r1",
+    },
+    {
+        "url": "https://www.formbot3d.com/products/voron-v02-corexy-3d-printer-kit-with-high-quality-parts?VariantsId=11017",
+        "label": "formbot v0.2 r1",
+    },
+    {
+        "url": "https://www.formbot3d.com/products/voron-trident-r1-pro-corexy-3d-printer-kit-with-best-quality-parts?VariantsId=10505",
+        "label": "formbot trident r1",
+    },
+    {
+        "url": "https://www.formbot3d.com/products/voron-24-r2-pro-corexy-3d-printer-kit-with-m8p-cb1-board-and-canbus-wiring-system?VariantsId=10457",
+        "label": "formbot 2.4 r2",
+    },
 ]
 
 DEFAULT_BRAND_KEYWORDS = {

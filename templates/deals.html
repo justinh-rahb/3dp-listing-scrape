@@ -19,7 +19,7 @@
                 </h6>
 
                 <div class="d-flex gap-2 mb-2 flex-wrap">
-                    <span class="badge bg-success fs-6">${{ "%.0f"|format(deal.current_price) }}</span>
+                    <span class="badge bg-success fs-6">{{ deal.currency }} ${{ "%.0f"|format(deal.current_price) }}</span>
 
                     {% if deal.price_drop_abs > 0 %}
                     <span class="badge bg-warning text-dark">
@@ -48,20 +48,21 @@
 
                 <div class="small text-muted">
                     {% if deal.brand %}<span class="me-2">{{ deal.brand|title }}</span>{% endif %}
+                    {% if deal.source %}<span class="me-2">{{ deal.source|upper }}</span>{% endif %}
                     {% if deal.location %}<span class="me-2">{{ deal.location }}</span>{% endif %}
                     <span>{{ deal.days_on_market }} days on market</span>
                 </div>
 
-                {% if deal.original_price != deal.current_price %}
+                {% if deal.nominal_price and deal.nominal_price != deal.current_price %}
                 <div class="small mt-1">
-                    <s class="text-muted">${{ "%.0f"|format(deal.original_price) }}</s>
-                    &rarr; ${{ "%.0f"|format(deal.current_price) }}
+                    <s class="text-muted">{{ deal.currency }} ${{ "%.0f"|format(deal.nominal_price) }}</s>
+                    &rarr; {{ deal.currency }} ${{ "%.0f"|format(deal.current_price) }}
                 </div>
                 {% endif %}
             </div>
             <div class="card-footer">
                 <a href="{{ deal.url }}" target="_blank" class="btn btn-outline-primary btn-sm">
-                    View on Kijiji
+                    View listing
                 </a>
             </div>
         </div>

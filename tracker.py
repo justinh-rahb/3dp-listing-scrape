@@ -73,7 +73,8 @@ def compute_deals(listings: list[dict]) -> list[Deal]:
 
     for listing in listings:
         current = listing.get("current_price")
-        original = listing.get("original_price")
+        nominal = listing.get("nominal_price")
+        original = nominal if nominal is not None else listing.get("original_price")
 
         if current is None or original is None or current <= 0:
             continue
@@ -124,9 +125,12 @@ def compute_deals(listings: list[dict]) -> list[Deal]:
             url=listing["url"],
             current_price=current,
             original_price=original,
+            nominal_price=nominal,
             price_drop_abs=max(price_drop, 0),
             price_drop_pct=drop_pct,
             days_on_market=days_on_market,
+            currency=(listing.get("currency") or "USD").upper(),
+            source=listing.get("source") or "kijiji",
             brand=brand,
             msrp=msrp,
             retail_price=retail_price,

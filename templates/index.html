@@ -56,11 +56,6 @@
             </div>
 
             <div class="mb-2">
-                <input type="text" name="location" class="form-control form-control-sm"
-                       placeholder="Location..." value="{{ filters.location or '' }}">
-            </div>
-
-            <div class="mb-2">
                 <select name="sort_by" class="form-select form-select-sm">
                     <option value="last_seen_desc" {% if filters.sort_by == 'last_seen_desc' %}selected{% endif %}>Last Seen (Newest)</option>
                     <option value="last_seen_asc" {% if filters.sort_by == 'last_seen_asc' %}selected{% endif %}>Last Seen (Oldest)</option>
@@ -138,7 +133,6 @@
                         <th><a href="{{ sort_urls.price }}" class="text-decoration-none link-body-emphasis">Price {{ sort_icons.price }}</a></th>
                         <th><a href="{{ sort_urls.change }}" class="text-decoration-none link-body-emphasis">Change {{ sort_icons.change }}</a></th>
                         <th><a href="{{ sort_urls.brand }}" class="text-decoration-none link-body-emphasis">Brand {{ sort_icons.brand }}</a></th>
-                        <th><a href="{{ sort_urls.location }}" class="text-decoration-none link-body-emphasis">Location {{ sort_icons.location }}</a></th>
                         <th><a href="{{ sort_urls.first_seen }}" class="text-decoration-none link-body-emphasis">First Seen {{ sort_icons.first_seen }}</a></th>
                         <th></th>
                     </tr>
@@ -160,18 +154,25 @@
                         </td>
                         <td>
                             <a href="/listing/{{ listing.kijiji_id }}">{{ listing.title[:60] }}</a>
+                            <span class="badge bg-light text-dark border">{{ (listing.source or 'kijiji')|upper }}</span>
                             {% if not listing.is_active %}
                             <span class="badge bg-secondary">Inactive</span>
                             {% endif %}
                             {% if listing.is_hidden %}
                             <span class="badge bg-dark">Hidden</span>
                             {% endif %}
+                            {% if listing.on_sale %}
+                            <span class="badge bg-danger">Sale</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if listing.current_price is not none %}
-                            ${{ "%.0f"|format(listing.current_price) }}
+                            {{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.current_price) }}
                             {% else %}
                             Contact
+                            {% endif %}
+                            {% if listing.nominal_price and listing.nominal_price > listing.current_price %}
+                            <div class="small text-muted"><s>{{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.nominal_price) }}</s></div>
                             {% endif %}
                         </td>
                         <td>
@@ -185,7 +186,6 @@
                             {% endif %}
                         </td>
                         <td>{{ (listing.brand or '')|title }}</td>
-                        <td class="text-truncate" style="max-width: 150px;">{{ listing.location or '' }}</td>
                         <td>{{ (listing.first_seen or '')[:10] }}</td>
                         <td class="text-end">
                             <button onclick="toggleHide('{{ listing.kijiji_id }}', {{ 'false' if listing.is_hidden else 'true' }})"

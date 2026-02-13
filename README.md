@@ -1,11 +1,13 @@
-# 3D Printer Kijiji Deal Tracker
+# 3D Printer Listing Tracker
 
-Track 3D printer listings on Kijiji (Hamilton area) and automatically detect price drops and deals.
+Track 3D printer listings across Kijiji and retailer sites, then automatically detect price drops and deals.
 
 ## Features
 
-- **Automated Scraping**: Periodically scrape Kijiji for 3D printer listings
+- **Automated Scraping**: Periodically scrape Kijiji plus selected retailer pages
 - **Price Tracking**: Monitor price changes over time with historical snapshots
+- **Multi-Currency Storage**: Store one canonical `price` plus `currency` per listing
+- **Sale Detection**: Detect sale pricing and keep nominal (non-sale) price when available
 - **Deal Detection**: Automatically identify listings with:
   - Price drops from original listing price
   - Prices significantly below MSRP
@@ -108,7 +110,7 @@ The web dashboard provides:
 
 ### Search Queries
 
-By default, the scraper searches Hamilton (ON) for:
+By default, the scraper searches Hamilton (ON) Kijiji for:
 - 3d printer
 - bambu lab
 - prusa
@@ -116,6 +118,10 @@ By default, the scraper searches Hamilton (ON) for:
 - ender 3
 - anycubic
 - voron
+
+It also includes:
+- Sovol Zero product page (`sovol3d.com`)
+- Formbot Voron collection page (`formbot3d.com`)
 
 You can modify search queries in the Settings page of the web dashboard or by editing the database directly.
 
@@ -126,6 +132,7 @@ Configure scraping behavior in Settings:
 - **Max Pages**: Maximum pages to scrape per search query
 - **Request Delay**: Random delay between requests (2-5 seconds)
 - **Inactive Threshold**: Missed runs before marking a listing inactive
+- **FX Rates to USD**: Used for USD-equivalent price change detection (`fx_rates_to_usd`)
 
 ## Aurora Tech Channel Integration (Currently Disabled)
 
@@ -190,7 +197,7 @@ Configure scrape interval in the Settings page (`scrape_interval_hours`).
 
 - **Be Respectful**: The scraper includes delays to avoid overloading Kijiji's servers
 - **Hamilton Only**: Currently configured for Hamilton, ON listings
-- **Price Format**: Assumes CAD pricing
+- **Price Format**: Listings store both `price` and `currency`
 - **Aurora Data**: Retail prices are in USD but tracked as CAD for comparison
 
 ## Contributing
