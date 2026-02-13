@@ -212,6 +212,15 @@
 
 {% block scripts %}
 <script>
+// Update listing count
+function updateListingCount() {
+    const count = document.querySelectorAll('tbody tr').length;
+    const countElement = document.querySelector('h5.mb-0');
+    if (countElement) {
+        countElement.textContent = `${count} Listings`;
+    }
+}
+
 // Track selected items
 function updateBulkActions() {
     const checkboxes = document.querySelectorAll('.listing-checkbox:checked');
@@ -279,9 +288,20 @@ async function performBulkAction(hide) {
 
         const data = await response.json();
 
+        // Check if "show_hidden" filter is enabled
+        const showHiddenCheckbox = document.getElementById('showHidden');
+        const showHidden = showHiddenCheckbox && showHiddenCheckbox.checked;
+
         // Update UI for affected rows
         checkboxes.forEach(checkbox => {
             const row = checkbox.closest('tr');
+
+            // If hiding items and show_hidden filter is off, remove the row
+            if (data.is_hidden && !showHidden) {
+                row.remove();
+                return;
+            }
+
             const titleCell = row.querySelector('td:nth-child(3)');
             const hiddenBadge = titleCell?.querySelector('.badge.bg-dark');
             const hideBtn = row.querySelector('[data-kijiji-id]');
@@ -306,6 +326,7 @@ async function performBulkAction(hide) {
         });
 
         clearSelection();
+        updateListingCount();
 
         // Show success message
         const successMsg = document.createElement('div');

@@ -105,6 +105,20 @@
                 // Update badge in table row (if exists)
                 const row = btn.closest('tr');
                 if (row) {
+                    // Check if "show_hidden" filter is enabled
+                    const showHiddenCheckbox = document.getElementById('showHidden');
+                    const showHidden = showHiddenCheckbox && showHiddenCheckbox.checked;
+
+                    // If hiding and show_hidden filter is off, remove the row
+                    if (data.is_hidden && !showHidden) {
+                        row.remove();
+                        // Update listing count if function exists (only on index page)
+                        if (typeof updateListingCount === 'function') {
+                            updateListingCount();
+                        }
+                        return;
+                    }
+
                     const titleCell = row.querySelector('td:nth-child(3)');
                     const hiddenBadge = titleCell?.querySelector('.badge.bg-dark');
 
