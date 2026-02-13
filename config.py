@@ -71,6 +71,26 @@ DEFAULT_SEARCH_QUERIES = [
         "url": "https://shop.snapmaker.com/products/snapmaker-u1-3d-printer",
         "label": "snapmaker u1",
     },
+    {
+        "url": "https://www.sovol3d.com/products/sovol-sv08-3d-printer?variant=48547571499317",
+        "label": "sovol sv08",
+    },
+    {
+        "url": "https://www.sovol3d.com/products/sovol-sv08-max-3d-printer?variant=51066484392245",
+        "label": "sovol sv08 max",
+    },
+    {
+        "url": "https://ca.qidi3d.com/products/qidi-q2",
+        "label": "qidi q2",
+    },
+    {
+        "url": "https://ca.qidi3d.com/products/max4",
+        "label": "qidi max4",
+    },
+    {
+        "url": "https://ca.qidi3d.com/products/plus4-3d-printer",
+        "label": "qidi plus4",
+    },
 ]
 
 DEFAULT_BRAND_KEYWORDS = {
