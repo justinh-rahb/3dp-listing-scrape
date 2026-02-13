@@ -83,6 +83,24 @@ def _format_payload(provider: str, event: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
+def _post_payload(webhook_url: str, payload: dict[str, Any]) -> tuple[bool, str]:
+    timeout_seconds = 5
+    delays = [1, 3, 9]
+    for idx in range(len(delays) + 1):
+        try:
+            resp = requests.post(webhook_url, json=payload, timeout=timeout_seconds)
+            resp.raise_for_status()
+            return True, ""
+        except requests.RequestException as exc:
+            if idx >= len(delays):
+                return False, str(exc)
+            delay = delays[idx]
+            import time
+
+            time.sleep(delay)
+    return False, "Unknown webhook delivery error"
+
+
 def send_webhook_event(event_type: str, data: dict[str, Any], settings: dict[str, Any]) -> bool:
     """Send an event to configured webhook endpoint. Returns True if sent."""
     enabled = bool(settings.get("webhook_enabled", False))
@@ -96,19 +114,24 @@ def send_webhook_event(event_type: str, data: dict[str, Any], settings: dict[str
 
     event = _canonical_event(event_type, data)
     payload = _format_payload(provider, event)
+    ok, _ = _post_payload(webhook_url, payload)
+    return ok
 
-    timeout_seconds = 5
-    delays = [1, 3, 9]
-    for idx in range(len(delays) + 1):
-        try:
-            resp = requests.post(webhook_url, json=payload, timeout=timeout_seconds)
-            resp.raise_for_status()
-            return True
-        except requests.RequestException:
-            if idx >= len(delays):
-                return False
-            delay = delays[idx]
-            import time
 
-            time.sleep(delay)
-    return False
+def send_test_webhook(settings: dict[str, Any]) -> tuple[bool, str]:
+    """Send a test notification using current provider format."""
+    webhook_url = (settings.get("webhook_url") or "").strip()
+    provider = (settings.get("webhook_provider") or "generic").strip().lower()
+    if not webhook_url:
+        return False, "Webhook URL is required"
+
+    event = _canonical_event("scrape_completed", {
+        "test": True,
+        "message": "This is a test webhook from 3DP Deal Tracker",
+        "found": 0,
+        "new": 0,
+        "price_changes": 0,
+        "errors": 0,
+    })
+    payload = _format_payload(provider, event)
+    return _post_payload(webhook_url, payload)

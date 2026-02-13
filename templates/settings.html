@@ -150,6 +150,7 @@
             </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">Save Webhook Settings</button>
+                <button type="button" id="webhook-test-btn" class="btn btn-outline-secondary ms-2">Send Test</button>
                 <span id="webhook-saved" class="text-success ms-2" style="display:none">Saved!</span>
             </div>
         </form>
@@ -331,6 +332,25 @@ document.getElementById('webhook-form').addEventListener('submit', async (e) => 
     await api('PUT', '/api/settings', data);
     document.getElementById('webhook-saved').style.display = 'inline';
     setTimeout(() => document.getElementById('webhook-saved').style.display = 'none', 2000);
+});
+
+document.getElementById('webhook-test-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+    try {
+        await api('POST', '/api/settings/webhook-test', {
+            webhook_url: document.getElementById('webhook-url').value.trim(),
+            webhook_provider: document.getElementById('webhook-provider').value,
+        });
+        await showAlertModal('Test webhook sent successfully.', 'Webhook Test');
+    } catch (err) {
+        await showAlertModal(`Webhook test failed: ${err.message}`, 'Webhook Test Failed');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+    }
 });
 
 // Search Queries

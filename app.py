@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import db
 import scheduler
 from config import SETTINGS_PASSWORD
+from notifier import send_test_webhook
 from tracker import compute_deals
 
 logger = logging.getLogger(__name__)
@@ -314,6 +315,11 @@ class ClearDbRequest(BaseModel):
     preserve_settings: bool = True
 
 
+class WebhookTestRequest(BaseModel):
+    webhook_url: Optional[str] = None
+    webhook_provider: Optional[str] = None
+
+
 @app.put("/api/settings")
 async def api_update_settings(data: SettingsUpdate, _: None = Depends(require_settings_auth)):
     updated = {}
@@ -325,6 +331,21 @@ async def api_update_settings(data: SettingsUpdate, _: None = Depends(require_se
         scheduler.start_scheduler(updated["scrape_interval_hours"])
 
     return {"updated": updated}
+
+
+@app.post("/api/settings/webhook-test")
+async def api_webhook_test(data: WebhookTestRequest, _: None = Depends(require_settings_auth)):
+    settings = db.get_all_settings()
+    if data.webhook_url is not None:
+        settings["webhook_url"] = data.webhook_url
+    if data.webhook_provider is not None:
+        settings["webhook_provider"] = data.webhook_provider
+
+    ok, error = send_test_webhook(settings)
+    if not ok:
+        status_code = 400 if error == "Webhook URL is required" else 502
+        raise HTTPException(status_code=status_code, detail=error)
+    return {"ok": True}
 
 
 @app.post("/api/settings/clear-db")
