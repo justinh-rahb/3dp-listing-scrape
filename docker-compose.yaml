@@ -12,6 +12,8 @@ services:
       RELOAD: "false"
       LOG_LEVEL: info
       DB_PATH: /app/data/listings.db
+      # Optional: protect /settings and related APIs with HTTP Basic auth.
+      SETTINGS_PASSWORD: ""
     volumes:
       - tracker_data:/app/data
     healthcheck:

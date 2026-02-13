@@ -108,6 +108,17 @@ The web dashboard provides:
 
 ## Configuration
 
+### Settings Page Password
+
+To protect the Settings page and settings-management API endpoints, set:
+
+```bash
+export SETTINGS_PASSWORD="your-strong-password"
+```
+
+When `SETTINGS_PASSWORD` is set, opening `/settings` will require HTTP Basic auth.
+If `SETTINGS_PASSWORD` is unset or empty, settings auth is disabled.
+
 ### Search Queries
 
 By default, the scraper searches Hamilton (ON) Kijiji for:

@@ -2,18 +2,21 @@
 
 import json
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 import db
 import scheduler
+from config import SETTINGS_PASSWORD
 from tracker import compute_deals
 
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ def from_json_filter(value):
 
 
 templates.env.filters["from_json"] = from_json_filter
+settings_auth = HTTPBasic(auto_error=False)
 
 
 def parse_optional_float(value: Optional[str]) -> Optional[float]:
@@ -61,6 +65,19 @@ def parse_optional_float(value: Optional[str]) -> Optional[float]:
         return float(cleaned)
     except ValueError:
         return None
+
+
+def require_settings_auth(credentials: Optional[HTTPBasicCredentials] = Depends(settings_auth)) -> None:
+    """Protect settings UI and APIs when SETTINGS_PASSWORD is configured."""
+    if not SETTINGS_PASSWORD:
+        return
+
+    if not credentials or not secrets.compare_digest(credentials.password, SETTINGS_PASSWORD):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Settings authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 # ── Page Routes ────────────────────────────────────────────────
@@ -221,7 +238,7 @@ async def deals_page(request: Request):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-async def settings_page(request: Request):
+async def settings_page(request: Request, _: None = Depends(require_settings_auth)):
     settings = db.get_all_settings()
     queries = db.get_search_queries()
     brands = db.get_brand_keywords()
@@ -247,7 +264,7 @@ async def api_price_history(kijiji_id: str):
 # ── API: Settings ─────────────────────────────────────────────
 
 @app.get("/api/settings")
-async def api_get_settings():
+async def api_get_settings(_: None = Depends(require_settings_auth)):
     return db.get_all_settings()
 
 
@@ -264,7 +281,7 @@ class ClearDbRequest(BaseModel):
 
 
 @app.put("/api/settings")
-async def api_update_settings(data: SettingsUpdate):
+async def api_update_settings(data: SettingsUpdate, _: None = Depends(require_settings_auth)):
     updated = {}
     for key, value in data.model_dump(exclude_none=True).items():
         db.set_setting(key, value)
@@ -277,7 +294,7 @@ async def api_update_settings(data: SettingsUpdate):
 
 
 @app.post("/api/settings/clear-db")
-async def api_clear_db(data: ClearDbRequest):
+async def api_clear_db(data: ClearDbRequest, _: None = Depends(require_settings_auth)):
     result = db.clear_database(preserve_settings=data.preserve_settings)
     return {"ok": True, **result}
 
@@ -285,7 +302,7 @@ async def api_clear_db(data: ClearDbRequest):
 # ── API: Search Queries ────────────────────────────────────────
 
 @app.get("/api/search-queries")
-async def api_list_queries():
+async def api_list_queries(_: None = Depends(require_settings_auth)):
     return db.get_search_queries()
 
 
@@ -295,7 +312,7 @@ class SearchQueryCreate(BaseModel):
 
 
 @app.post("/api/search-queries")
-async def api_add_query(data: SearchQueryCreate):
+async def api_add_query(data: SearchQueryCreate, _: None = Depends(require_settings_auth)):
     qid = db.add_search_query(data.url, data.label)
     return {"id": qid, "url": data.url, "label": data.label, "enabled": 1}
 
@@ -307,19 +324,19 @@ class SearchQueryUpdate(BaseModel):
 
 
 @app.put("/api/search-queries/{query_id}")
-async def api_update_query(query_id: int, data: SearchQueryUpdate):
+async def api_update_query(query_id: int, data: SearchQueryUpdate, _: None = Depends(require_settings_auth)):
     db.update_search_query(query_id, url=data.url, label=data.label, enabled=data.enabled)
     return {"ok": True}
 
 
 @app.delete("/api/search-queries/{query_id}")
-async def api_delete_query(query_id: int):
+async def api_delete_query(query_id: int, _: None = Depends(require_settings_auth)):
     db.delete_search_query(query_id)
     return {"ok": True}
 
 
 @app.post("/api/search-queries/{query_id}/scrape")
-async def api_scrape_query(query_id: int):
+async def api_scrape_query(query_id: int, _: None = Depends(require_settings_auth)):
     query = next((q for q in db.get_search_queries() if q["id"] == query_id), None)
     if not query:
         raise HTTPException(status_code=404, detail="Search query not found")
@@ -332,7 +349,7 @@ async def api_scrape_query(query_id: int):
 # ── API: Brand Keywords ───────────────────────────────────────
 
 @app.get("/api/brands")
-async def api_list_brands():
+async def api_list_brands(_: None = Depends(require_settings_auth)):
     return db.get_brand_keywords()
 
 
@@ -342,13 +359,13 @@ class BrandKeywordCreate(BaseModel):
 
 
 @app.post("/api/brands")
-async def api_add_brand(data: BrandKeywordCreate):
+async def api_add_brand(data: BrandKeywordCreate, _: None = Depends(require_settings_auth)):
     kid = db.add_brand_keyword(data.brand, data.keyword)
     return {"id": kid, "brand": data.brand, "keyword": data.keyword}
 
 
 @app.delete("/api/brands/{keyword_id}")
-async def api_delete_brand(keyword_id: int):
+async def api_delete_brand(keyword_id: int, _: None = Depends(require_settings_auth)):
     db.delete_brand_keyword(keyword_id)
     return {"ok": True}
 
@@ -356,7 +373,7 @@ async def api_delete_brand(keyword_id: int):
 # ── API: MSRP ─────────────────────────────────────────────────
 
 @app.get("/api/msrp")
-async def api_list_msrp():
+async def api_list_msrp(_: None = Depends(require_settings_auth)):
     return db.get_msrp_entries()
 
 
@@ -368,13 +385,13 @@ class MsrpCreate(BaseModel):
 
 
 @app.post("/api/msrp")
-async def api_upsert_msrp(data: MsrpCreate):
+async def api_upsert_msrp(data: MsrpCreate, _: None = Depends(require_settings_auth)):
     eid = db.upsert_msrp_entry(data.brand, data.model, data.msrp_cad, data.msrp_usd)
     return {"id": eid, "brand": data.brand, "model": data.model, "msrp_cad": data.msrp_cad}
 
 
 @app.delete("/api/msrp/{entry_id}")
-async def api_delete_msrp(entry_id: int):
+async def api_delete_msrp(entry_id: int, _: None = Depends(require_settings_auth)):
     db.delete_msrp_entry(entry_id)
     return {"ok": True}
 

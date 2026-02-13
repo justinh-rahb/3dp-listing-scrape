@@ -9,6 +9,10 @@ import os
 # Database path
 DB_PATH = os.environ.get("DB_PATH", "listings.db")
 
+# Optional HTTP Basic password that protects the Settings page and related APIs.
+# Leave unset/empty to disable protection.
+SETTINGS_PASSWORD = os.environ.get("SETTINGS_PASSWORD", "").strip()
+
 # User agents to rotate (not user-configurable, just a static list)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
