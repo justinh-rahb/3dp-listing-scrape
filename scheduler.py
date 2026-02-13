@@ -28,6 +28,8 @@ def _source_from_url(url: str) -> str:
         return "sovol"
     if "formbot3d.com" in host:
         return "formbot"
+    if "qidi3d.com" in host:
+        return "qidi3d"
     return "unknown"
 
 

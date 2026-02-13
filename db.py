@@ -122,6 +122,14 @@ def _ensure_schema_updates(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE listings ADD COLUMN nominal_price REAL")
     if "on_sale" not in listing_columns:
         conn.execute("ALTER TABLE listings ADD COLUMN on_sale INTEGER DEFAULT 0")
+    # Normalize historical source tags for Qidi URLs (e.g. "ca" -> "qidi3d").
+    conn.execute(
+        """
+        UPDATE listings
+        SET source = 'qidi3d'
+        WHERE LOWER(url) LIKE '%qidi3d.com%'
+        """
+    )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_hidden ON listings(is_hidden)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source)")
 

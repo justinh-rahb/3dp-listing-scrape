@@ -503,12 +503,23 @@ class RetailScraper:
 
     def _infer_source_from_url(self, url: str) -> str:
         host = urlparse(url).netloc.lower()
+        host = host.split(":", 1)[0]
+        host = host.replace("www.", "")
+
+        # Handle localized subdomains like ca.qidi3d.com -> qidi3d.com.
+        locale_prefixes = {"ca", "us", "eu", "uk", "au", "de", "fr", "es", "it", "jp"}
+        host_parts = host.split(".")
+        if len(host_parts) >= 3 and host_parts[0] in locale_prefixes:
+            host = ".".join(host_parts[1:])
+
         if "sovol3d.com" in host:
             return "sovol"
         if "formbot3d.com" in host:
             return "formbot"
+        if "qidi3d.com" in host:
+            return "qidi3d"
         # Generic fallback for new Shopify manufacturers.
-        parts = host.replace("www.", "").split(".")
+        parts = host.split(".")
         if len(parts) >= 3 and parts[0] in {"shop", "store"}:
             base = parts[1].strip()
         else:
