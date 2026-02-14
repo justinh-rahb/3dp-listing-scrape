@@ -102,6 +102,50 @@
     z-index: 10;
 }
 
+/* Collapsible filters panel */
+#filtersToggleBtn {
+    white-space: nowrap;
+}
+
+.listings-header {
+    margin-top: 0.5rem;
+    margin-bottom: 0.9rem !important;
+    gap: 0.75rem;
+}
+
+@media (min-width: 768px) {
+    #listingsLayout {
+        flex-wrap: nowrap;
+    }
+
+    #filtersCol {
+        overflow: hidden;
+        transition: flex-basis 220ms ease, max-width 220ms ease, opacity 180ms ease, transform 220ms ease;
+    }
+
+    #listingsLayout.filters-collapsed #filtersCol {
+        flex-basis: 0 !important;
+        max-width: 0 !important;
+        opacity: 0;
+        transform: translateX(-14px);
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    #listingsLayout.filters-collapsed #filtersPanel {
+        pointer-events: none;
+    }
+
+    #listingsCol {
+        transition: flex-basis 220ms ease, max-width 220ms ease;
+    }
+
+    #listingsLayout.filters-collapsed #listingsCol {
+        flex: 1 1 100%;
+        max-width: 100%;
+    }
+}
+
 /* Checkbox column styling */
 .listing-checkbox {
     cursor: pointer;
@@ -147,6 +191,42 @@ tr:has(.listing-checkbox:checked) {
     /* Use compact card-style rows to avoid horizontal scrolling */
     .table-responsive {
         overflow-x: visible;
+    }
+
+    #filtersCol {
+        width: 100%;
+    }
+
+    .listings-header {
+        margin-top: 1rem;
+        margin-bottom: 1rem !important;
+        flex-wrap: wrap;
+    }
+
+    .listings-header h5 {
+        font-size: 2rem;
+        line-height: 1.05;
+    }
+
+    #filtersToggleBtn {
+        margin-left: auto;
+        min-height: 2.5rem;
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+    }
+
+    #filtersPanel {
+        overflow: hidden;
+        max-height: 1400px;
+        opacity: 1;
+        transition: max-height 240ms ease, opacity 180ms ease, margin-bottom 240ms ease;
+    }
+
+    #listingsLayout.filters-collapsed #filtersPanel {
+        max-height: 0;
+        opacity: 0;
+        margin-bottom: 0 !important;
+        pointer-events: none;
     }
 
     .table thead {

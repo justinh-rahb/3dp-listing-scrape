@@ -24,9 +24,10 @@
 </div>
 {% endif %}
 
-<div class="row">
+<div class="row" id="listingsLayout">
     <!-- Filters sidebar -->
-    <div class="col-md-3 col-lg-2">
+    <div class="col-md-3 col-lg-2" id="filtersCol">
+        <div id="filtersPanel">
         <form method="get" class="mb-3">
             <h6>Filters</h6>
 
@@ -118,12 +119,16 @@
             {% endif %}
         </div>
         {% endif %}
+        </div>
     </div>
 
     <!-- Listings table -->
-    <div class="col-md-9 col-lg-10">
-        <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="col-md-9 col-lg-10" id="listingsCol">
+        <div class="d-flex justify-content-between align-items-center mb-2 listings-header">
             <h5 class="mb-0">{{ listings|length }} Listings</h5>
+            <button type="button" id="filtersToggleBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleFiltersPanel()">
+                Hide Filters
+            </button>
         </div>
 
         <div id="bulkActionsBar" class="alert alert-info py-2 px-3 mb-2" style="display: none;">
@@ -467,6 +472,24 @@ function updateStarButton(button, starred) {
     button.classList.toggle('starred', starred);
 }
 
+function applyFiltersPanelState(collapsed) {
+    const layout = document.getElementById('listingsLayout');
+    const toggleBtn = document.getElementById('filtersToggleBtn');
+    if (!layout || !toggleBtn) return;
+
+    layout.classList.toggle('filters-collapsed', collapsed);
+    toggleBtn.textContent = collapsed ? 'Show Filters' : 'Hide Filters';
+    toggleBtn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+}
+
+function toggleFiltersPanel() {
+    const layout = document.getElementById('listingsLayout');
+    if (!layout) return;
+    const collapsed = !layout.classList.contains('filters-collapsed');
+    applyFiltersPanelState(collapsed);
+    localStorage.setItem('filtersCollapsed', collapsed ? '1' : '0');
+}
+
 async function toggleStar(kijiji_id, button) {
     const currentlyStarred = button.dataset.starred === 'true';
     const endpoint = currentlyStarred ? 'unstar' : 'star';
@@ -496,6 +519,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.star-toggle-btn').forEach((button) => {
         updateStarButton(button, button.dataset.starred === 'true');
     });
+    applyFiltersPanelState(localStorage.getItem('filtersCollapsed') === '1');
     updateBulkActions();
 });
 </script>
