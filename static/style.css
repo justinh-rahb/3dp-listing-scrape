@@ -28,6 +28,33 @@
     color: #d19a00;
 }
 
+.listing-row {
+    position: relative;
+}
+
+.first-seen-cell {
+    position: relative;
+    padding-right: 7.5rem;
+}
+
+.row-hover-actions {
+    position: absolute;
+    right: 0.4rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.1rem 0.25rem;
+    background: var(--bs-body-bg);
+    border-radius: 0.35rem;
+}
+
+.listing-row:hover .row-hover-actions,
+.listing-row:focus-within .row-hover-actions {
+    display: inline-flex;
+}
+
 .table td, .table th {
     vertical-align: middle;
 }
@@ -117,8 +144,133 @@ tr:has(.listing-checkbox:checked) {
         padding: 0.25rem 0.5rem;
     }
 
-    /* Ensure table scrolls smoothly */
+    /* Use compact card-style rows to avoid horizontal scrolling */
     .table-responsive {
-        -webkit-overflow-scrolling: touch;
+        overflow-x: visible;
+    }
+
+    .table thead {
+        display: none;
+    }
+
+    .table,
+    .table tbody,
+    .table tr,
+    .table td {
+        display: block;
+        width: 100%;
+    }
+
+    .listing-row {
+        position: relative;
+        border: 1px solid var(--bs-border-color);
+        border-radius: 0.5rem;
+        padding: 1.4rem 0.6rem 0.55rem;
+        margin-bottom: 0.6rem;
+        background: var(--bs-body-bg);
+        display: grid;
+        grid-template-columns: 4.2rem 1fr;
+        grid-template-areas:
+            "image title"
+            "price price"
+            "change brand model seen";
+        gap: 0.35rem 0.55rem;
+    }
+
+    .listing-row td {
+        border: 0;
+        padding: 0;
+        min-height: 1.25rem;
+    }
+
+    .cell-select {
+        position: absolute !important;
+        top: 0.4rem;
+        left: 0.45rem;
+        width: auto !important;
+        z-index: 3;
+        min-height: 0;
+    }
+
+    .cell-star {
+        position: absolute !important;
+        top: 0.2rem;
+        right: 0.35rem;
+        left: auto !important;
+        width: auto !important;
+        z-index: 3;
+        min-height: 0;
+        padding: 0;
+        text-align: right;
+    }
+
+    .cell-image { grid-area: image; }
+    .cell-image { margin-top: 0.3rem; }
+    .cell-title { grid-area: title; }
+    .cell-price { grid-area: price; }
+    .cell-change { grid-area: change; }
+    .cell-brand { grid-area: brand; }
+    .cell-model { grid-area: model; }
+    .cell-seen { grid-area: seen; }
+
+    .listing-thumb {
+        width: 64px;
+        height: 48px;
+    }
+
+    .cell-title a {
+        display: inline-block;
+        margin-right: 0.25rem;
+        font-size: 0.95rem;
+        line-height: 1.2;
+    }
+
+    .cell-price::before,
+    .cell-change::before,
+    .cell-brand::before,
+    .cell-model::before,
+    .cell-seen::before {
+        content: attr(data-label) ": ";
+        color: var(--bs-secondary-color);
+        font-size: 0.72rem;
+        margin-right: 0.2rem;
+    }
+
+    .cell-price,
+    .cell-change,
+    .cell-brand,
+    .cell-model,
+    .cell-seen {
+        font-size: 0.9rem;
+    }
+
+    .star-toggle-btn {
+        padding: 0;
+        font-size: 1.65rem;
+        line-height: 1;
+    }
+
+    .first-seen-cell {
+        position: static;
+        padding-right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+    }
+
+    .row-hover-actions {
+        position: static;
+        transform: none;
+        display: inline-flex;
+        margin-left: 0.15rem;
+        padding: 0;
+        background: transparent;
+    }
+
+    .row-hover-actions .btn {
+        padding: 0.18rem 0.45rem;
     }
 }

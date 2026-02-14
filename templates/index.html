@@ -159,19 +159,18 @@
                         <th><a href="{{ sort_urls.brand }}" class="text-decoration-none link-body-emphasis">Brand {{ sort_icons.brand }}</a></th>
                         <th><a href="{{ sort_urls.model }}" class="text-decoration-none link-body-emphasis">Model {{ sort_icons.model }}</a></th>
                         <th><a href="{{ sort_urls.first_seen }}" class="text-decoration-none link-body-emphasis">First Seen {{ sort_icons.first_seen }}</a></th>
-                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for listing in listings %}
-                    <tr>
-                        <td>
+                    <tr class="listing-row">
+                        <td class="cell-select">
                             <input type="checkbox" class="form-check-input listing-checkbox"
                                    value="{{ listing.kijiji_id }}"
                                    data-hidden="{{ 'true' if listing.is_hidden else 'false' }}"
                                    onchange="updateBulkActions()">
                         </td>
-                        <td class="star-col-cell">
+                        <td class="star-col-cell cell-star">
                             <button type="button"
                                     class="btn star-toggle-btn"
                                     aria-label="{{ 'Unstar listing' if listing.is_starred else 'Star listing' }}"
@@ -181,13 +180,13 @@
                                 {{ '★' if listing.is_starred else '☆' }}
                             </button>
                         </td>
-                        <td>
+                        <td class="cell-image">
                             {% set images = listing.image_urls|from_json %}
                             {% if images %}
                             <img src="{{ images[0] }}" alt="" class="listing-thumb">
                             {% endif %}
                         </td>
-                        <td class="listing-title-cell">
+                        <td class="listing-title-cell cell-title" data-label="Title">
                             <a href="/listing/{{ listing.kijiji_id }}">{{ listing.title[:60] }}</a>
                             <span class="badge bg-light text-dark border">{{ (listing.source or 'kijiji')|upper }}</span>
                             {% if not listing.is_active %}
@@ -197,10 +196,10 @@
                             <span class="badge bg-dark">Hidden</span>
                             {% endif %}
                             {% if listing.on_sale %}
-                            <span class="badge bg-danger">Sale</span>
+                                <span class="badge bg-danger">Sale</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="cell-price" data-label="Price">
                             {% if listing.current_price is not none %}
                             {{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.current_price) }}
                             {% else %}
@@ -210,7 +209,7 @@
                             <div class="small text-muted"><s>{{ listing.currency or 'USD' }} ${{ "%.0f"|format(listing.nominal_price) }}</s></div>
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="cell-change" data-label="Change">
                             {% if listing.original_price and listing.current_price and listing.original_price != listing.current_price %}
                                 {% set drop = listing.original_price - listing.current_price %}
                                 {% if drop > 0 %}
@@ -218,13 +217,15 @@
                                 {% else %}
                                 <span class="text-danger">+${{ "%.0f"|format(-drop) }}</span>
                                 {% endif %}
+                            {% else %}
+                            —
                             {% endif %}
                         </td>
-                        <td>{{ (listing.brand or '')|title }}</td>
-                        <td>{{ listing.model or '' }}</td>
-                        <td>{{ (listing.first_seen or '')[:10] }}</td>
-                        <td class="text-end">
-                            <div class="d-flex justify-content-end gap-1">
+                        <td class="cell-brand" data-label="Brand">{{ (listing.brand or '')|title }}</td>
+                        <td class="cell-model" data-label="Model">{{ listing.model or '—' }}</td>
+                        <td class="first-seen-cell cell-seen" data-label="First Seen">
+                            {{ (listing.first_seen or '')[:10] }}
+                            <div class="row-hover-actions">
                                 <button type="button" onclick="toggleHide('{{ listing.kijiji_id }}', {{ 'false' if listing.is_hidden else 'true' }})"
                                         class="btn btn-outline-secondary btn-sm"
                                         data-kijiji-id="{{ listing.kijiji_id }}"
