@@ -604,6 +604,10 @@ def get_listings(filters: Optional[dict] = None,
         where_clauses.append("brand = ?")
         params.append(filters["brand"])
 
+    if filters.get("model"):
+        where_clauses.append("LOWER(model) = LOWER(?)")
+        params.append(filters["model"])
+
     if filters.get("min_price") is not None:
         where_clauses.append("current_price >= ?")
         params.append(filters["min_price"])
@@ -629,6 +633,8 @@ def get_listings(filters: Optional[dict] = None,
         "price_desc": "current_price DESC",
         "brand_asc": "brand IS NULL, LOWER(brand) ASC",
         "brand_desc": "brand IS NULL, LOWER(brand) DESC",
+        "model_asc": "model IS NULL, LOWER(model) ASC",
+        "model_desc": "model IS NULL, LOWER(model) DESC",
         "location_asc": "location IS NULL, LOWER(location) ASC",
         "location_desc": "location IS NULL, LOWER(location) DESC",
         "first_seen_asc": "first_seen ASC",
@@ -822,6 +828,19 @@ def get_distinct_brands(conn: Optional[sqlite3.Connection] = None) -> list[str]:
         "SELECT DISTINCT brand FROM listings WHERE brand IS NOT NULL AND is_active = 1 ORDER BY brand"
     ).fetchall()
     result = [row["brand"] for row in rows]
+    if close:
+        conn.close()
+    return result
+
+
+def get_distinct_models(conn: Optional[sqlite3.Connection] = None) -> list[str]:
+    close = conn is None
+    if close:
+        conn = get_conn()
+    rows = conn.execute(
+        "SELECT DISTINCT model FROM listings WHERE model IS NOT NULL AND is_active = 1 ORDER BY model"
+    ).fetchall()
+    result = [row["model"] for row in rows]
     if close:
         conn.close()
     return result

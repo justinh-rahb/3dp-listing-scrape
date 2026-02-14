@@ -84,7 +84,7 @@ def require_settings_auth(credentials: Optional[HTTPBasicCredentials] = Depends(
 # ── Page Routes ────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request, brand: Optional[str] = None,
+async def index(request: Request, brand: Optional[str] = None, model: Optional[str] = None,
                 min_price: Optional[str] = None, max_price: Optional[str] = None,
                 search: Optional[str] = None,
                 active_only: str = "1", show_hidden: str = "0",
@@ -102,6 +102,7 @@ async def index(request: Request, brand: Optional[str] = None,
 
     filters = {
         "brand": brand,
+        "model": model,
         "min_price": min_price_value,
         "max_price": max_price_value,
         "search": search,
@@ -116,6 +117,7 @@ async def index(request: Request, brand: Optional[str] = None,
         "price": ("price_asc", "price_desc"),
         "change": ("price_drop_asc", "price_drop_desc"),
         "brand": ("brand_asc", "brand_desc"),
+        "model": ("model_asc", "model_desc"),
         "first_seen": ("first_seen_asc", "first_seen_desc"),
     }
     sort_urls = {}
@@ -136,10 +138,11 @@ async def index(request: Request, brand: Optional[str] = None,
 
     listings = db.get_listings(filters)
     brands = db.get_distinct_brands()
+    models = db.get_distinct_models()
     stats = db.get_stats()
     sched_status = scheduler.get_status()
     return templates.TemplateResponse("index.html", {
-        "request": request, "listings": listings, "brands": brands,
+        "request": request, "listings": listings, "brands": brands, "models": models,
         "filters": filters, "stats": stats, "scheduler": sched_status,
         "sort_urls": sort_urls, "sort_icons": sort_icons,
     })
