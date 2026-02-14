@@ -82,6 +82,13 @@
                 <label class="form-check-label" for="showHidden">Show hidden</label>
             </div>
 
+            <div class="mb-2 form-check">
+                <input type="hidden" name="starred_only" value="0">
+                <input type="checkbox" name="starred_only" value="1" class="form-check-input" id="starredOnly"
+                       {% if filters.starred_only %}checked{% endif %}>
+                <label class="form-check-label" for="starredOnly">Starred only</label>
+            </div>
+
             <button type="submit" class="btn btn-primary btn-sm w-100">Filter</button>
             <a href="/" class="btn btn-outline-secondary btn-sm w-100 mt-1">Reset</a>
         </form>
@@ -131,6 +138,7 @@
                         <th style="width: 40px;">
                             <input type="checkbox" id="selectAll" class="form-check-input" onchange="toggleSelectAll(this)">
                         </th>
+                        <th class="star-col-header"></th>
                         <th></th>
                         <th><a href="{{ sort_urls.title }}" class="text-decoration-none link-body-emphasis">Title {{ sort_icons.title }}</a></th>
                         <th><a href="{{ sort_urls.price }}" class="text-decoration-none link-body-emphasis">Price {{ sort_icons.price }}</a></th>
@@ -149,13 +157,23 @@
                                    data-hidden="{{ 'true' if listing.is_hidden else 'false' }}"
                                    onchange="updateBulkActions()">
                         </td>
+                        <td class="star-col-cell">
+                            <button type="button"
+                                    class="btn star-toggle-btn"
+                                    aria-label="{{ 'Unstar listing' if listing.is_starred else 'Star listing' }}"
+                                    title="{{ 'Remove from watchlist' if listing.is_starred else 'Add to watchlist' }}"
+                                    data-starred="{{ 'true' if listing.is_starred else 'false' }}"
+                                    onclick="toggleStar('{{ listing.kijiji_id }}', this)">
+                                {{ '★' if listing.is_starred else '☆' }}
+                            </button>
+                        </td>
                         <td>
                             {% set images = listing.image_urls|from_json %}
                             {% if images %}
                             <img src="{{ images[0] }}" alt="" class="listing-thumb">
                             {% endif %}
                         </td>
-                        <td>
+                        <td class="listing-title-cell">
                             <a href="/listing/{{ listing.kijiji_id }}">{{ listing.title[:60] }}</a>
                             <span class="badge bg-light text-dark border">{{ (listing.source or 'kijiji')|upper }}</span>
                             {% if not listing.is_active %}
@@ -359,7 +377,7 @@ async function performBulkAction(hide) {
                 return;
             }
 
-            const titleCell = row.querySelector('td:nth-child(3)');
+            const titleCell = row.querySelector('.listing-title-cell');
             const hiddenBadge = titleCell?.querySelector('.badge.bg-dark');
             const hideBtn = row.querySelector('[data-kijiji-id]');
 
@@ -425,7 +443,44 @@ async function deleteListing(kijiji_id) {
     }
 }
 
+function updateStarButton(button, starred) {
+    button.dataset.starred = starred ? 'true' : 'false';
+    button.textContent = starred ? '★' : '☆';
+    button.setAttribute('aria-label', starred ? 'Unstar listing' : 'Star listing');
+    button.setAttribute('title', starred ? 'Remove from watchlist' : 'Add to watchlist');
+    button.classList.toggle('starred', starred);
+}
+
+async function toggleStar(kijiji_id, button) {
+    const currentlyStarred = button.dataset.starred === 'true';
+    const endpoint = currentlyStarred ? 'unstar' : 'star';
+
+    button.disabled = true;
+    try {
+        const response = await fetch(`/api/listing/${kijiji_id}/${endpoint}`, {method: 'POST'});
+        if (!response.ok) throw new Error('Star toggle failed');
+        updateStarButton(button, !currentlyStarred);
+
+        const starredOnlyCheckbox = document.getElementById('starredOnly');
+        if (currentlyStarred && starredOnlyCheckbox && starredOnlyCheckbox.checked) {
+            button.closest('tr')?.remove();
+            updateListingCount();
+            updateBulkActions();
+        }
+    } catch (error) {
+        console.error('Star toggle error:', error);
+        await showAlertModal('Failed to update watchlist state. Please try again.', 'Request Failed');
+    } finally {
+        button.disabled = false;
+    }
+}
+
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', updateBulkActions);
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.star-toggle-btn').forEach((button) => {
+        updateStarButton(button, button.dataset.starred === 'true');
+    });
+    updateBulkActions();
+});
 </script>
 {% endblock %}

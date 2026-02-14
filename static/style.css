@@ -5,6 +5,29 @@
     border-radius: 4px;
 }
 
+.star-col-header,
+.star-col-cell {
+    width: 36px;
+    text-align: center;
+}
+
+.star-toggle-btn {
+    border: 0;
+    background: transparent;
+    color: var(--bs-secondary-color);
+    font-size: 1.15rem;
+    line-height: 1;
+    padding: 0 0.2rem;
+}
+
+.star-toggle-btn.starred {
+    color: #d19a00;
+}
+
+.star-toggle-btn:hover {
+    color: #d19a00;
+}
+
 .table td, .table th {
     vertical-align: middle;
 }

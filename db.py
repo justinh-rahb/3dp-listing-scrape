@@ -33,6 +33,7 @@ def init_db(db_path: str = DB_PATH):
             last_seen       TEXT NOT NULL,
             is_active       INTEGER DEFAULT 1,
             is_hidden       INTEGER DEFAULT 0,
+            is_starred      INTEGER DEFAULT 0,
             missed_runs     INTEGER DEFAULT 0,
             brand           TEXT,
             model           TEXT,
@@ -122,6 +123,8 @@ def _ensure_schema_updates(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE listings ADD COLUMN nominal_price REAL")
     if "on_sale" not in listing_columns:
         conn.execute("ALTER TABLE listings ADD COLUMN on_sale INTEGER DEFAULT 0")
+    if "is_starred" not in listing_columns:
+        conn.execute("ALTER TABLE listings ADD COLUMN is_starred INTEGER DEFAULT 0")
     # Normalize historical source tags for Qidi URLs (e.g. "ca" -> "qidi3d").
     conn.execute(
         """
@@ -131,6 +134,7 @@ def _ensure_schema_updates(conn: sqlite3.Connection):
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_hidden ON listings(is_hidden)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_starred ON listings(is_starred)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source)")
 
 
@@ -436,9 +440,9 @@ def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None
         conn.execute("""
             INSERT INTO listings (kijiji_id, source, url, title, description, seller_name,
                                   location, image_urls, listing_date, first_seen, last_seen,
-                                  is_active, is_hidden, missed_runs, brand, model, msrp,
+                                  is_active, is_hidden, is_starred, missed_runs, brand, model, msrp,
                                   current_price, original_price, nominal_price, on_sale, currency)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             listing_data["kijiji_id"],
             listing_data.get("source", "kijiji"),
@@ -593,6 +597,9 @@ def get_listings(filters: Optional[dict] = None,
     if filters.get("active_only", True):
         where_clauses.append("is_active = 1")
 
+    if filters.get("starred_only", False):
+        where_clauses.append("is_starred = 1")
+
     if filters.get("brand"):
         where_clauses.append("brand = ?")
         params.append(filters["brand"])
@@ -669,6 +676,20 @@ def set_listing_hidden(kijiji_id: str, hidden: bool,
     conn.execute(
         "UPDATE listings SET is_hidden = ? WHERE kijiji_id = ?",
         (1 if hidden else 0, kijiji_id),
+    )
+    conn.commit()
+    if close:
+        conn.close()
+
+
+def set_listing_starred(kijiji_id: str, starred: bool,
+                        conn: Optional[sqlite3.Connection] = None):
+    close = conn is None
+    if close:
+        conn = get_conn()
+    conn.execute(
+        "UPDATE listings SET is_starred = ? WHERE kijiji_id = ?",
+        (1 if starred else 0, kijiji_id),
     )
     conn.commit()
     if close:

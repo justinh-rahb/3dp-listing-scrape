@@ -87,7 +87,8 @@ def require_settings_auth(credentials: Optional[HTTPBasicCredentials] = Depends(
 async def index(request: Request, brand: Optional[str] = None,
                 min_price: Optional[str] = None, max_price: Optional[str] = None,
                 search: Optional[str] = None,
-                active_only: str = "1", show_hidden: str = "0", sort_by: str = "last_seen"):
+                active_only: str = "1", show_hidden: str = "0",
+                starred_only: str = "0", sort_by: str = "last_seen"):
     sort_aliases = {
         "last_seen": "last_seen_desc",
         "newest": "first_seen_desc",
@@ -106,6 +107,7 @@ async def index(request: Request, brand: Optional[str] = None,
         "search": search,
         "active_only": active_only == "1",
         "show_hidden": show_hidden == "1",
+        "starred_only": starred_only == "1",
         "sort_by": current_sort,
     }
 
@@ -178,6 +180,20 @@ async def api_unhide_listing(kijiji_id: str):
     """JSON endpoint for unhiding listing without page refresh."""
     db.set_listing_hidden(kijiji_id, False)
     return {"ok": True, "kijiji_id": kijiji_id, "is_hidden": False}
+
+
+@app.post("/api/listing/{kijiji_id}/star")
+async def api_star_listing(kijiji_id: str):
+    """JSON endpoint for starring listing without page refresh."""
+    db.set_listing_starred(kijiji_id, True)
+    return {"ok": True, "kijiji_id": kijiji_id, "is_starred": True}
+
+
+@app.post("/api/listing/{kijiji_id}/unstar")
+async def api_unstar_listing(kijiji_id: str):
+    """JSON endpoint for unstarring listing without page refresh."""
+    db.set_listing_starred(kijiji_id, False)
+    return {"ok": True, "kijiji_id": kijiji_id, "is_starred": False}
 
 
 class ListingMetadataUpdate(BaseModel):
