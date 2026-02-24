@@ -658,7 +658,7 @@ class RetailScraper:
         compare_candidates = [p for p in compare_candidates if p is not None and p >= 20]
 
         current = min(current_candidates) if current_candidates else None
-        nominal = max(compare_candidates) if compare_candidates else None
+        nominal = min(compare_candidates) if compare_candidates else None
         return current, nominal, currency
 
     def _extract_dom_prices(self, soup: BeautifulSoup) -> tuple[Optional[float], Optional[float], Optional[str]]:
@@ -792,10 +792,18 @@ class RetailScraper:
                 if isinstance(price_currency, str) and price_currency.strip():
                     currency = price_currency.strip().upper()
 
-        # Use rendered DOM price as strongest signal for the active variant.
-        if dom_current is not None:
+        json_price = current_price
+
+        def is_valid_override(candidate):
+            if json_price is None:
+                return True
+            # Cross-sells are usually much cheaper, so we ignore drastic drops
+            return (json_price * 0.5) <= candidate <= (json_price * 2.0)
+
+        # Use rendered DOM price or variant price if they look reasonable
+        if dom_current is not None and is_valid_override(dom_current):
             current_price = dom_current
-        elif variant_current is not None:
+        elif variant_current is not None and is_valid_override(variant_current):
             current_price = variant_current
 
         # Currency precedence: DOM > variant JSON-LD inferred value.
@@ -814,10 +822,12 @@ class RetailScraper:
                 current_price = min(price_candidates)
                 nominal_price = max(price_candidates) if max(price_candidates) > current_price else None
 
-        if dom_nominal is not None:
-            nominal_price = dom_nominal
-        elif nominal_price is None and variant_nominal is not None:
-            nominal_price = variant_nominal
+        if dom_nominal is not None and (current_price is None or dom_nominal >= current_price):
+            if is_valid_override(dom_nominal * 0.8): # Very rough heuristic
+                nominal_price = dom_nominal
+        elif nominal_price is None and variant_nominal is not None and (current_price is None or variant_nominal >= current_price):
+            if is_valid_override(variant_nominal * 0.8):
+                nominal_price = variant_nominal
 
         # Last fallback for compare-at in raw source.
         if nominal_price is None:
@@ -826,7 +836,7 @@ class RetailScraper:
                 candidate = self._parse_shopify_money(compare_match.group("v"))
                 if candidate is None:
                     candidate = 0
-                if candidate > current_price:
+                if candidate > current_price and is_valid_override(candidate * 0.8):
                     nominal_price = candidate
 
         # Fallback for pages that expose only product price metas.
