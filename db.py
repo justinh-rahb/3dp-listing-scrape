@@ -418,6 +418,125 @@ def get_msrp_map(conn: Optional[sqlite3.Connection] = None) -> dict:
     return result
 
 
+def export_app_data(data_type: str = "all", conn: Optional[sqlite3.Connection] = None) -> dict:
+    """Export search queries, brand keywords, and/or MSRP entries as a dictionary."""
+    close_after = False
+    if conn is None:
+        conn = get_conn()
+        close_after = True
+
+    try:
+        result = {}
+
+        if data_type in ("all", "queries"):
+            queries = []
+            for row in conn.execute("SELECT url, label, enabled FROM search_queries").fetchall():
+                queries.append({"url": row["url"], "label": row["label"], "enabled": bool(row["enabled"])})
+            result["search_queries"] = queries
+
+        if data_type in ("all", "brands"):
+            brands = []
+            for row in conn.execute("SELECT brand, keyword FROM brand_keywords").fetchall():
+                brands.append({"brand": row["brand"], "keyword": row["keyword"]})
+            result["brand_keywords"] = brands
+
+        if data_type in ("all", "msrp"):
+            msrp = []
+            for row in conn.execute("SELECT brand, model, msrp_cad, msrp_usd, retail_price FROM msrp_entries").fetchall():
+                msrp.append({
+                    "brand": row["brand"],
+                    "model": row["model"],
+                    "msrp_cad": row["msrp_cad"],
+                    "msrp_usd": row["msrp_usd"],
+                    "retail_price": row["retail_price"]
+                })
+            result["msrp_entries"] = msrp
+
+        return result
+    finally:
+        if close_after:
+            conn.close()
+
+
+def import_app_data(data: dict, data_type: str = "all", clear_existing: bool = False, overwrite: bool = False, conn: Optional[sqlite3.Connection] = None) -> dict:
+    """Import search queries, brand keywords, and/or MSRP entries from a dictionary."""
+    close_after = False
+    if conn is None:
+        conn = get_conn()
+        close_after = True
+
+    result = {"queries": 0, "brands": 0, "msrp": 0}
+    try:
+        if clear_existing:
+            if data_type in ("all", "queries"):
+                conn.execute("DELETE FROM search_queries")
+            if data_type in ("all", "brands"):
+                conn.execute("DELETE FROM brand_keywords")
+            if data_type in ("all", "msrp"):
+                conn.execute("DELETE FROM msrp_entries")
+
+        if data_type in ("all", "queries"):
+            queries = data.get("search_queries", [])
+            for q in queries:
+                if "url" in q and "label" in q:
+                    enabled = 1 if q.get("enabled", True) else 0
+                    # search_queries doesn't have an obvious UNIQUE constraint on url+label, so it might just insert duplicates 
+                    # unless we do a select check. I'll preserve exact behaviour for now.
+                    conn.execute(
+                        "INSERT INTO search_queries (url, label, enabled) VALUES (?, ?, ?)",
+                        (q["url"], q["label"], enabled)
+                    )
+                    result["queries"] += 1
+
+        if data_type in ("all", "brands"):
+            brands = data.get("brand_keywords", [])
+            for b in brands:
+                if "brand" in b and "keyword" in b:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO brand_keywords (brand, keyword) VALUES (?, ?)",
+                        (b["brand"].lower(), b["keyword"].lower())
+                    )
+                    result["brands"] += 1
+
+        if data_type in ("all", "msrp"):
+            msrp = data.get("msrp_entries", [])
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc).isoformat()
+            
+            for m in msrp:
+                if "brand" in m and "model" in m and "msrp_cad" in m:
+                    if overwrite:
+                        query = """
+                            INSERT INTO msrp_entries (brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(brand, model) DO UPDATE SET
+                                msrp_cad=excluded.msrp_cad,
+                                msrp_usd=excluded.msrp_usd,
+                                retail_price=excluded.retail_price,
+                                last_updated=excluded.last_updated
+                        """
+                    else:
+                        query = """
+                            INSERT OR IGNORE INTO msrp_entries (brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """
+                    conn.execute(
+                        query,
+                        (m["brand"].lower(), m["model"], m["msrp_cad"], m.get("msrp_usd"), m.get("retail_price"), now)
+                    )
+                    result["msrp"] += 1
+        
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        if close_after:
+            conn.close()
+    
+    return result
+
+
 # ── Listings CRUD (unchanged from V1) ─────────────────────────
 
 def upsert_listing(listing_data: dict, conn: Optional[sqlite3.Connection] = None) -> bool:

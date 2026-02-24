@@ -35,6 +35,7 @@
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-queries">Search Queries</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-brands">Brands</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-msrp">MSRP Data</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-data">Data Management</a></li>
 </ul>
 
 <div class="tab-content pt-3">
@@ -275,6 +276,64 @@
             </div>
         </form>
     </div>
+    <!-- Data Management -->
+    <div class="tab-pane" id="tab-data">
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Export Data</h5>
+                        <p class="card-text text-muted mb-3">Download a JSON backup of your tracked data.</p>
+                        <form id="export-form">
+                            <div class="mb-3">
+                                <label class="form-label">Data to Export</label>
+                                <select class="form-select" name="data_type" id="export-type">
+                                    <option value="all">Everything (Queries, Brands, MSRPs)</option>
+                                    <option value="queries">Search Queries</option>
+                                    <option value="brands">Brand Keywords</option>
+                                    <option value="msrp">MSRP Entries</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Download JSON</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card h-100 border-warning">
+                    <div class="card-body">
+                        <h5 class="card-title text-warning">Import Data</h5>
+                        <p class="card-text text-muted mb-3">Upload a JSON file to restore data.</p>
+                        <form id="import-form">
+                            <div class="mb-3">
+                                <label class="form-label">JSON File</label>
+                                <input class="form-control" type="file" id="import-file" accept=".json" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Data to Import</label>
+                                <select class="form-select" name="data_type" id="import-type">
+                                    <option value="all">Everything (Queries, Brands, MSRPs)</option>
+                                    <option value="queries">Search Queries</option>
+                                    <option value="brands">Brand Keywords</option>
+                                    <option value="msrp">MSRP Entries</option>
+                                </select>
+                            </div>
+                            <div class="mb-2 form-check">
+                                <input type="checkbox" class="form-check-input" id="import-overwrite" name="overwrite">
+                                <label class="form-check-label" for="import-overwrite">Overwrite existing MSRP values</label>
+                            </div>
+                            <div class="mb-3 form-check text-danger">
+                                <input type="checkbox" class="form-check-input" id="import-clear" name="clear_existing">
+                                <label class="form-check-label" for="import-clear">Clear all existing data of this type first</label>
+                            </div>
+                            <button type="submit" class="btn btn-warning" id="import-submit-btn">Upload & Import</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -417,6 +476,62 @@ async function deleteMsrp(id, btn) {
     await api('DELETE', `/api/msrp/${id}`);
     btn.closest('tr').remove();
 }
+
+// Data Management
+document.getElementById('export-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const dataType = document.getElementById('export-type').value;
+    window.location.href = `/api/settings/export?data_type=${encodeURIComponent(dataType)}`;
+});
+
+document.getElementById('import-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fileInput = document.getElementById('import-file');
+    if (!fileInput.files.length) {
+        await showAlertModal('Please select a JSON file to import.', 'Import Error');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('data_type', document.getElementById('import-type').value);
+    formData.append('clear_existing', document.getElementById('import-clear').checked);
+    formData.append('overwrite', document.getElementById('import-overwrite').checked);
+
+    const btn = document.getElementById('import-submit-btn');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Importing...';
+
+    try {
+        const r = await fetch('/api/settings/import', {
+            method: 'POST',
+            body: formData
+            // Do NOT set Content-Type header. The browser automatically sets it with the boundary for FormData
+        });
+        
+        const payload = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            throw new Error(payload.detail || payload.error || `Request failed (${r.status})`);
+        }
+        
+        const res = payload.result;
+        let msg = '<p>Data imported successfully!</p><ul>';
+        if (res.queries > 0) msg += `<li>${res.queries} Search Queries</li>`;
+        if (res.brands > 0) msg += `<li>${res.brands} Brand Keywords</li>`;
+        if (res.msrp > 0) msg += `<li>${res.msrp} MSRP Entries</li>`;
+        msg += '</ul>';
+        
+        await showAlertModal(msg, 'Import Complete');
+        location.reload();
+    } catch (err) {
+        await showAlertModal(`Failed to import data: ${err.message}`, 'Import Error');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        fileInput.value = '';
+    }
+});
 
 async function clearDatabase() {
     const confirmed = await showConfirmModal({

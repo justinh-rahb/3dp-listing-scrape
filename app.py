@@ -373,6 +373,54 @@ async def api_clear_db(data: ClearDbRequest, _: None = Depends(require_settings_
     return {"ok": True, **result}
 
 
+@app.get("/api/settings/export")
+async def api_export_data(data_type: str = "all"):
+    """Export app data as JSON (open endpoint)."""
+    from fastapi.responses import JSONResponse
+    from datetime import datetime
+    
+    data = db.export_app_data(data_type=data_type)
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    filename = f"3dp_tracker_export_{data_type}_{date_str}.json"
+    
+    return JSONResponse(
+        content=data,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
+
+
+from fastapi import Form, UploadFile, File
+
+@app.post("/api/settings/import")
+async def api_import_data(
+    file: UploadFile = File(...),
+    data_type: str = Form("all"),
+    clear_existing: bool = Form(False),
+    overwrite: bool = Form(False),
+    _: None = Depends(require_settings_auth)
+):
+    """Import app data from an uploaded JSON file (secured)."""
+    if not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only JSON files are supported")
+    
+    try:
+        content = await file.read()
+        data = json.loads(content)
+        result = db.import_app_data(
+            data, 
+            data_type=data_type, 
+            clear_existing=clear_existing, 
+            overwrite=overwrite
+        )
+        return {"ok": True, "result": result}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── API: Search Queries ────────────────────────────────────────
 
 @app.get("/api/search-queries")

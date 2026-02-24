@@ -144,5 +144,54 @@ def update_retail_prices():
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--out", default="3d_deal_tracker_data.json", help="Path to output JSON file")
+@click.option("--type", "data_type", type=click.Choice(["queries", "brands", "msrp", "all"]), default="all", help="Which data to export")
+def export_data(out, data_type):
+    """Export search queries, brands, and/or MSRPs to a JSON file."""
+    import json
+    click.echo(f"Exporting {data_type} to {out}...")
+    try:
+        data = db.export_app_data(data_type=data_type)
+        with open(out, "w") as f:
+            json.dump(data, f, indent=2)
+        click.echo("✓ Export complete!")
+    except Exception as e:
+        click.echo(f"✗ Error exporting data: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--in-file", required=True, help="Path to input JSON file")
+@click.option("--type", "data_type", type=click.Choice(["queries", "brands", "msrp", "all"]), default="all", help="Which data to import")
+@click.option("--clear", is_flag=True, help="Clear existing data of the specified type before importing")
+@click.option("--overwrite", is_flag=True, help="Overwrite existing MSRP entries if they conflict (vs ignore)")
+def import_data(in_file, data_type, clear, overwrite):
+    """Import search queries, brands, and/or MSRPs from a JSON file."""
+    import json
+    click.echo(f"Reading data from {in_file}...")
+    try:
+        with open(in_file, "r") as f:
+            data = json.load(f)
+        click.echo(f"Importing {data_type} (clear={clear}, overwrite={overwrite})...")
+        result = db.import_app_data(data, data_type=data_type, clear_existing=clear, overwrite=overwrite)
+        click.echo(f"✓ Import complete!")
+        if data_type in ("all", "queries"):
+            click.echo(f"  Queries imported: {result['queries']}")
+        if data_type in ("all", "brands"):
+            click.echo(f"  Brands imported:  {result['brands']}")
+        if data_type in ("all", "msrp"):
+            click.echo(f"  MSRPs imported:   {result['msrp']}")
+    except FileNotFoundError:
+        click.echo(f"✗ File not found: {in_file}")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        click.echo(f"✗ Invalid JSON in file: {in_file}")
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"✗ Error importing data: {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()
