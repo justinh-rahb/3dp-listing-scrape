@@ -516,11 +516,10 @@ document.getElementById('import-form').addEventListener('submit', async (e) => {
         }
         
         const res = payload.result;
-        let msg = '<p>Data imported successfully!</p><ul>';
-        if (res.queries > 0) msg += `<li>${res.queries} Search Queries</li>`;
-        if (res.brands > 0) msg += `<li>${res.brands} Brand Keywords</li>`;
-        if (res.msrp > 0) msg += `<li>${res.msrp} MSRP Entries</li>`;
-        msg += '</ul>';
+        let msg = 'Data imported successfully!\n\n';
+        if (res.queries > 0) msg += `• ${res.queries} Search Queries\n`;
+        if (res.brands > 0) msg += `• ${res.brands} Brand Keywords\n`;
+        if (res.msrp > 0) msg += `• ${res.msrp} MSRP Entries\n`;
         
         await showAlertModal(msg, 'Import Complete');
         location.reload();
