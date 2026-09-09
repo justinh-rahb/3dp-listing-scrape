@@ -13,7 +13,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from config import USER_AGENTS
-from models import ScrapedListing
+from models import ScrapeOutcome, ScrapedListing
 
 logger = logging.getLogger(__name__)
 
@@ -41,14 +41,17 @@ class KijijiScraper:
         parts = base_url.rsplit("/", 1)
         return f"{parts[0]}/page-{page}/{parts[1]}"
 
-    def scrape_search(self, base_url: str, max_pages: Optional[int] = None) -> list[ScrapedListing]:
+    def scrape_search(self, base_url: str, max_pages: Optional[int] = None) -> ScrapeOutcome:
         max_pages = max_pages or self.max_pages
         """Scrape all pages of a search query. Returns deduplicated listings."""
         all_listings = []
         seen_ids = set()
+        pages_attempted = 0
+        pages_completed = 0
 
         for page in range(1, max_pages + 1):
             url = self._build_page_url(base_url, page)
+            pages_attempted += 1
             self._rotate_ua()
             self._delay()
 
@@ -56,20 +59,60 @@ class KijijiScraper:
                 resp = self.session.get(url, timeout=30)
             except requests.RequestException as e:
                 logger.error(f"Request failed for {url}: {e}")
-                break
+                return ScrapeOutcome(
+                    status="partial" if all_listings else "failed",
+                    requested_url=base_url,
+                    listings=all_listings,
+                    pages_attempted=pages_attempted,
+                    pages_completed=pages_completed,
+                    failed_url=url,
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                )
 
             if resp.status_code == 403:
                 logger.warning(f"Got 403 (blocked) for {url}, stopping pagination")
-                break
+                return ScrapeOutcome(
+                    status="partial" if all_listings else "blocked",
+                    requested_url=base_url,
+                    listings=all_listings,
+                    pages_attempted=pages_attempted,
+                    pages_completed=pages_completed,
+                    failed_url=url,
+                    http_status=403,
+                    error_type="HttpError",
+                    error_message="HTTP 403 (blocked)",
+                )
             if resp.status_code == 429:
                 logger.warning(f"Got 429 (rate limited) for {url}, backing off")
                 time.sleep(30)
-                break
+                return ScrapeOutcome(
+                    status="partial" if all_listings else "blocked",
+                    requested_url=base_url,
+                    listings=all_listings,
+                    pages_attempted=pages_attempted,
+                    pages_completed=pages_completed,
+                    failed_url=url,
+                    http_status=429,
+                    error_type="HttpError",
+                    error_message="HTTP 429 (rate limited)",
+                )
             if resp.status_code != 200:
                 logger.warning(f"Got {resp.status_code} for {url}")
-                break
+                return ScrapeOutcome(
+                    status="partial" if all_listings else "failed",
+                    requested_url=base_url,
+                    listings=all_listings,
+                    pages_attempted=pages_attempted,
+                    pages_completed=pages_completed,
+                    failed_url=url,
+                    http_status=resp.status_code,
+                    error_type="HttpError",
+                    error_message=f"HTTP {resp.status_code}",
+                )
 
             listings, has_next = self._parse_search_page(resp.text, base_url)
+            pages_completed += 1
 
             for listing in listings:
                 if listing.kijiji_id not in seen_ids:
@@ -81,7 +124,13 @@ class KijijiScraper:
             if not has_next or len(listings) == 0:
                 break
 
-        return all_listings
+        return ScrapeOutcome(
+            status="success" if all_listings else "empty",
+            requested_url=base_url,
+            listings=all_listings,
+            pages_attempted=pages_attempted,
+            pages_completed=pages_completed,
+        )
 
     def _parse_search_page(self, html: str, base_url: str) -> tuple[list[ScrapedListing], bool]:
         """Parse a search results page. Returns (listings, has_next_page)."""
@@ -492,14 +541,42 @@ class RetailScraper:
             raise RuntimeError(f"Got {resp.status_code} for {url}")
         return resp.text
 
-    def scrape_url(self, url: str) -> list[ScrapedListing]:
-        path = urlparse(url).path.lower()
-        if "/products/" in path:
-            return self._scrape_shopify_product(url)
-        if "formbot3d.com" in url:
-            return self._scrape_formbot_vorons(url)
-        logger.warning(f"No retail scraper registered for url={url}")
-        return []
+    def scrape_url(self, url: str) -> ScrapeOutcome:
+        try:
+            path = urlparse(url).path.lower()
+            if "/products/" in path:
+                listings = self._scrape_shopify_product(url)
+            elif "formbot3d.com" in url:
+                listings = self._scrape_formbot_vorons(url)
+            else:
+                logger.warning(f"No retail scraper registered for url={url}")
+                return ScrapeOutcome(
+                    status="unsupported",
+                    requested_url=url,
+                    failed_url=url,
+                    error_type="UnsupportedSource",
+                    error_message="No retail scraper is registered for this URL",
+                )
+        except Exception as exc:
+            message = str(exc)
+            status_match = re.search(r"Got (?P<status>\d{3})", message)
+            http_status = int(status_match.group("status")) if status_match else None
+            return ScrapeOutcome(
+                status="blocked" if http_status in {403, 429} else "failed",
+                requested_url=url,
+                failed_url=url,
+                http_status=http_status,
+                error_type=type(exc).__name__,
+                error_message=message,
+            )
+
+        return ScrapeOutcome(
+            status="success" if listings else "empty",
+            requested_url=url,
+            listings=listings,
+            pages_attempted=1,
+            pages_completed=1,
+        )
 
     def _infer_source_from_url(self, url: str) -> str:
         host = urlparse(url).netloc.lower()

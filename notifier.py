@@ -10,6 +10,41 @@ import requests
 DEFAULT_EVENTS = {"scrape_completed", "new_deal_detected", "scrape_failed"}
 
 
+def _scrape_failure_text(data: dict[str, Any]) -> str:
+    failures = data.get("failures") or []
+    total = data.get("queries_total")
+    failed = data.get("queries_failed", len(failures))
+    if failures:
+        heading = f"Scrape partially failed: {failed} of {total} queries" if total else f"Scrape failed: {failed} queries"
+        lines = [heading]
+        for failure in failures[:5]:
+            lines.append("")
+            lines.append(str(failure.get("label") or "Unnamed query"))
+            lines.append(f"URL: {failure.get('failed_url') or failure.get('url') or 'unknown'}")
+            details = []
+            if failure.get("status"):
+                details.append(str(failure["status"]))
+            if failure.get("http_status"):
+                details.append(f"HTTP {failure['http_status']}")
+            if failure.get("error_type"):
+                details.append(str(failure["error_type"]))
+            if details:
+                lines.append(f"Type: {' · '.join(details)}")
+            if failure.get("error_message"):
+                lines.append(f"Error: {str(failure['error_message'])[:300]}")
+        if len(failures) > 5:
+            lines.append(f"\n…and {len(failures) - 5} more failures")
+        lines.append(
+            f"\nSucceeded: {data.get('queries_succeeded', 0)} · "
+            f"Found: {data.get('found', 0)} · New: {data.get('new', 0)} · "
+            f"Price changes: {data.get('price_changes', 0)}"
+        )
+        if data.get("run_id") is not None:
+            lines.append(f"Run: #{data['run_id']}")
+        return "\n".join(lines)
+    return f"Scrape failed: {data.get('error', 'Unknown error')}"
+
+
 def _event_enabled(event_type: str, settings: dict[str, Any]) -> bool:
     configured = settings.get("webhook_events", list(DEFAULT_EVENTS))
     if not isinstance(configured, list):
@@ -36,7 +71,7 @@ def _format_discord(event: dict[str, Any]) -> dict[str, Any]:
             f"price_changes={data.get('price_changes', 0)}, errors={data.get('errors', 0)}"
         )
     elif event_type == "scrape_failed":
-        content = f"Scrape failed: {data.get('error', 'Unknown error')}"
+        content = _scrape_failure_text(data)
     elif event_type == "new_deal_detected":
         deals = data.get("deals", [])
         lines = [f"New deals detected ({len(deals)}):"]
@@ -60,7 +95,7 @@ def _format_google_chat(event: dict[str, Any]) -> dict[str, Any]:
             f"price_changes={data.get('price_changes', 0)} errors={data.get('errors', 0)}"
         )
     elif event_type == "scrape_failed":
-        text = f"Scrape failed: {data.get('error', 'Unknown error')}"
+        text = _scrape_failure_text(data)
     elif event_type == "new_deal_detected":
         deals = data.get("deals", [])
         lines = [f"New deals detected ({len(deals)}):"]

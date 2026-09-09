@@ -16,9 +16,9 @@
     <span class="badge bg-warning text-dark">Scraping now...</span>
     {% endif %}
     {% if scheduler.last_result %}
-    <span class="text-muted">
+    <span class="{% if scheduler.last_result.errors %}text-danger{% else %}text-muted{% endif %}">
         Last: {{ scheduler.last_result.found }} found, {{ scheduler.last_result.new }} new,
-        {{ scheduler.last_result.price_changes }} price changes
+        {{ scheduler.last_result.price_changes }} price changes{% if scheduler.last_result.errors %}, {{ scheduler.last_result.errors }} failed queries{% endif %}
     </span>
     {% endif %}
 </div>
@@ -82,12 +82,47 @@
                 </select>
             </div>
 
-            <div class="mb-2 form-check">
-                <input type="hidden" name="active_only" value="0">
-                <input type="checkbox" name="active_only" value="1" class="form-check-input" id="activeOnly"
-                       {% if filters.active_only %}checked{% endif %}>
-                <label class="form-check-label" for="activeOnly">Active only</label>
+            <div class="mb-3">
+                <label class="form-label small mb-1">Listing status</label>
+                <div class="btn-group btn-group-sm w-100" role="group" aria-label="Listing status">
+                    <input type="radio" class="btn-check" name="listing_status" id="statusActive" value="active"
+                           onchange="this.form.submit()"
+                           {% if filters.listing_status == 'active' %}checked{% endif %}>
+                    <label class="btn btn-outline-secondary" for="statusActive">Active</label>
+
+                    <input type="radio" class="btn-check" name="listing_status" id="statusInactive" value="inactive"
+                           onchange="this.form.submit()"
+                           {% if filters.listing_status == 'inactive' %}checked{% endif %}>
+                    <label class="btn btn-outline-secondary" for="statusInactive">Inactive</label>
+
+                    <input type="radio" class="btn-check" name="listing_status" id="statusAll" value="all"
+                           onchange="this.form.submit()"
+                           {% if filters.listing_status == 'all' %}checked{% endif %}>
+                    <label class="btn btn-outline-secondary" for="statusAll">All</label>
+                </div>
             </div>
+
+            <div class="mb-2">
+                <label class="form-label small mb-1" for="staleDays">Last seen</label>
+                <select name="stale_days" id="staleDays" class="form-select form-select-sm"
+                        onchange="this.form.submit()">
+                    <option value="" {% if not filters.stale_days %}selected{% endif %}>Any time</option>
+                    {% for days in [7, 30, 90, 180] %}
+                    <option value="{{ days }}" {% if filters.stale_days == days %}selected{% endif %}>
+                        More than {{ days }} days ago
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {% if filters.stale_days %}
+            <button type="button" id="pruneStaleBtn"
+                    class="btn btn-danger btn-sm w-100 mb-3"
+                    onclick="pruneStaleListings({{ stale_prune_count }}, {{ filters.stale_days }}, '{{ filters.listing_status }}')"
+                    {% if not stale_prune_count %}disabled{% endif %}>
+                Delete {{ stale_prune_count }} matching stale
+            </button>
+            {% endif %}
 
             <div class="mb-2 form-check">
                 <input type="hidden" name="show_hidden" value="0">
@@ -111,12 +146,24 @@
         <div class="card card-body small">
             <strong>Stats</strong>
             <div>Active: {{ stats.active_listings }}</div>
+            <div>Inactive: <span id="inactiveListingsCount">{{ stats.inactive_listings }}</span></div>
+            <div>Stale &gt;30d: {{ stats.stale_listings_30d }}</div>
             <div>Total: {{ stats.total_listings }}</div>
             <div>Snapshots: {{ stats.total_snapshots }}</div>
             <div>With drops: {{ stats.listings_with_drops }}</div>
             {% if stats.last_run %}
             <div class="mt-1 text-muted">Last scrape: {{ stats.last_run.started_at[:16] }}</div>
             {% endif %}
+            <button type="button" id="pruneInactiveBtn"
+                    class="btn btn-outline-danger btn-sm w-100 mt-2"
+                    onclick="pruneInactiveListings({{ stats.inactive_listings }})"
+                    {% if not stats.inactive_listings %}disabled{% endif %}>
+                {% if stats.inactive_listings %}
+                Delete {{ stats.inactive_listings }} inactive
+                {% else %}
+                No inactive listings to delete
+                {% endif %}
+            </button>
         </div>
         {% endif %}
         </div>
@@ -160,7 +207,7 @@
                         <th></th>
                         <th><a href="{{ sort_urls.title }}" class="text-decoration-none link-body-emphasis">Title {{ sort_icons.title }}</a></th>
                         <th><a href="{{ sort_urls.price }}" class="text-decoration-none link-body-emphasis">Price {{ sort_icons.price }}</a></th>
-                        <th><a href="{{ sort_urls.change }}" class="text-decoration-none link-body-emphasis">Change {{ sort_icons.change }}</a></th>
+                        <th><a href="{{ sort_urls.change }}" class="text-decoration-none link-body-emphasis">Since first seen {{ sort_icons.change }}</a></th>
                         <th><a href="{{ sort_urls.brand }}" class="text-decoration-none link-body-emphasis">Brand {{ sort_icons.brand }}</a></th>
                         <th><a href="{{ sort_urls.model }}" class="text-decoration-none link-body-emphasis">Model {{ sort_icons.model }}</a></th>
                         <th><a href="{{ sort_urls.first_seen }}" class="text-decoration-none link-body-emphasis">First Seen {{ sort_icons.first_seen }}</a></th>
@@ -359,6 +406,61 @@ async function bulkDelete() {
         await showAlertModal('Failed to delete listings. Please try again.', 'Delete Failed');
     } finally {
         buttons.forEach(btn => btn.disabled = false);
+    }
+}
+
+async function pruneInactiveListings(count) {
+    if (!count) return;
+
+    const confirmed = await showConfirmModal({
+        title: 'Delete Inactive Listings',
+        body: `Permanently delete all ${count} inactive listing(s) and their price history? Active listings will not be touched.`,
+        confirmText: `Delete ${count}`,
+        confirmClass: 'btn-danger',
+    });
+    if (!confirmed) return;
+
+    const button = document.getElementById('pruneInactiveBtn');
+    if (button) button.disabled = true;
+
+    try {
+        const response = await fetch('/api/listings/inactive', {method: 'DELETE'});
+        if (!response.ok) throw new Error('Inactive listing cleanup failed');
+
+        const data = await response.json();
+        window.location.reload();
+    } catch (error) {
+        console.error('Inactive listing cleanup error:', error);
+        if (button) button.disabled = false;
+        await showAlertModal('Failed to delete inactive listings. Please try again.', 'Cleanup Failed');
+    }
+}
+
+async function pruneStaleListings(count, days, listingStatus) {
+    if (!count) return;
+    const statusLabel = listingStatus === 'all' ? '' : `${listingStatus} `;
+    const confirmed = await showConfirmModal({
+        title: 'Delete Stale Listings',
+        body: `Permanently delete ${count} ${statusLabel}listing(s) not seen in ${days} days, including their price history?`,
+        confirmText: `Delete ${count}`,
+        confirmClass: 'btn-danger',
+    });
+    if (!confirmed) return;
+
+    const button = document.getElementById('pruneStaleBtn');
+    if (button) button.disabled = true;
+    try {
+        const response = await fetch('/api/listings/prune-stale', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({days, listing_status: listingStatus}),
+        });
+        if (!response.ok) throw new Error('Stale listing cleanup failed');
+        window.location.reload();
+    } catch (error) {
+        console.error('Stale listing cleanup error:', error);
+        if (button) button.disabled = false;
+        await showAlertModal('Failed to delete stale listings. Please try again.', 'Cleanup Failed');
     }
 }
 

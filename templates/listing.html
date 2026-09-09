@@ -44,7 +44,7 @@
             <span id="msrp-badge"
                   class="badge bg-info fs-6 align-self-center {% if not listing.msrp %}d-none{% endif %}">
                 {% if listing.msrp %}
-                MSRP: ${{ "%.0f"|format(listing.msrp) }}
+                MSRP: {{ listing.msrp_currency or listing.currency or 'CAD' }} ${{ "%.0f"|format(listing.msrp) }}
                 ({{ "%.0f"|format(listing.current_price / listing.msrp * 100) }}%)
                 {% endif %}
             </span>
@@ -163,7 +163,7 @@ document.getElementById('metadata-form').addEventListener('submit', async (e) =>
 
         if (data.msrp && detailCurrentPrice !== null) {
             const msrpPct = Math.round((detailCurrentPrice / data.msrp) * 100);
-            msrpBadge.textContent = `MSRP: $${Math.round(data.msrp)} (${msrpPct}%)`;
+            msrpBadge.textContent = `MSRP: ${data.msrp_currency || '{{ listing.currency or "CAD" }}'} $${Math.round(data.msrp)} (${msrpPct}%)`;
             msrpBadge.classList.remove('d-none');
         } else {
             msrpBadge.classList.add('d-none');
