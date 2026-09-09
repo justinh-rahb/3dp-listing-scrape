@@ -154,12 +154,19 @@ def update_retail_prices():
 @cli.command()
 @click.option("--out", default="3d_deal_tracker_data.json", help="Path to output JSON file")
 @click.option("--type", "data_type", type=click.Choice(["queries", "brands", "msrp", "all"]), default="all", help="Which data to export")
-def export_data(out, data_type):
+@click.option("--legacy-compatible", is_flag=True, help="Omit MSRP rows without CAD prices for older app versions")
+def export_data(out, data_type, legacy_compatible):
     """Export search queries, brands, and/or MSRPs to a JSON file."""
     import json
     click.echo(f"Exporting {data_type} to {out}...")
     try:
         data = db.export_app_data(data_type=data_type)
+        if legacy_compatible and "msrp_entries" in data:
+            data["msrp_entries"] = [
+                entry
+                for entry in data["msrp_entries"]
+                if entry.get("msrp_cad") is not None
+            ]
         with open(out, "w") as f:
             json.dump(data, f, indent=2)
         click.echo("✓ Export complete!")

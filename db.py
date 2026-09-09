@@ -134,10 +134,17 @@ def init_db(db_path: str = DB_PATH):
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             brand         TEXT NOT NULL,
             model         TEXT NOT NULL,
-            msrp_cad      REAL NOT NULL,
+            msrp_cad      REAL,
             msrp_usd      REAL,
             retail_price  REAL,
             last_updated  TEXT,
+            aliases       TEXT NOT NULL DEFAULT '[]',
+            price_basis   TEXT NOT NULL DEFAULT 'unverified',
+            product_status TEXT NOT NULL DEFAULT 'unknown',
+            source_name   TEXT,
+            source_url    TEXT,
+            verified_at   TEXT,
+            notes         TEXT,
             UNIQUE(brand, model)
         );
 
@@ -154,6 +161,7 @@ def init_db(db_path: str = DB_PATH):
 
     # Seed defaults if tables are empty
     _seed_defaults(conn)
+    _upgrade_reference_catalog(conn)
     conn.close()
 
 
@@ -177,6 +185,46 @@ def _ensure_schema_updates(conn: sqlite3.Connection):
     if "msrp_currency" not in listing_columns:
         conn.execute("ALTER TABLE listings ADD COLUMN msrp_currency TEXT")
         conn.execute("UPDATE listings SET msrp_currency = 'CAD' WHERE msrp IS NOT NULL")
+
+    msrp_table = conn.execute("PRAGMA table_info(msrp_entries)").fetchall()
+    if any(row["name"] == "msrp_cad" and row["notnull"] for row in msrp_table):
+        # Older databases required a CAD value, which encouraged unsourced currency
+        # conversions. Rebuild once so a verified USD-only reference can stay USD-only.
+        conn.execute("ALTER TABLE msrp_entries RENAME TO msrp_entries_legacy")
+        conn.execute("""
+            CREATE TABLE msrp_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                brand TEXT NOT NULL,
+                model TEXT NOT NULL,
+                msrp_cad REAL,
+                msrp_usd REAL,
+                retail_price REAL,
+                last_updated TEXT,
+                UNIQUE(brand, model)
+            )
+        """)
+        conn.execute("""
+            INSERT INTO msrp_entries
+                (id, brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
+            SELECT id, brand, model, msrp_cad, msrp_usd, retail_price, last_updated
+            FROM msrp_entries_legacy
+        """)
+        conn.execute("DROP TABLE msrp_entries_legacy")
+
+    msrp_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(msrp_entries)").fetchall()
+    }
+    for name, definition in {
+        "aliases": "TEXT NOT NULL DEFAULT '[]'",
+        "price_basis": "TEXT NOT NULL DEFAULT 'unverified'",
+        "product_status": "TEXT NOT NULL DEFAULT 'unknown'",
+        "source_name": "TEXT",
+        "source_url": "TEXT",
+        "verified_at": "TEXT",
+        "notes": "TEXT",
+    }.items():
+        if name not in msrp_columns:
+            conn.execute(f"ALTER TABLE msrp_entries ADD COLUMN {name} {definition}")
 
     scrape_run_columns = {
         row["name"] for row in conn.execute("PRAGMA table_info(scrape_runs)").fetchall()
@@ -312,10 +360,73 @@ def _seed_defaults(conn: sqlite3.Connection):
             for brand, models in msrp_data.items():
                 for model, prices in models.items():
                     conn.execute(
-                        "INSERT OR IGNORE INTO msrp_entries (brand, model, msrp_cad, msrp_usd) VALUES (?, ?, ?, ?)",
-                        (brand, model, prices.get("msrp_cad", 0), prices.get("msrp_usd"))
+                        """
+                        INSERT OR IGNORE INTO msrp_entries
+                            (brand, model, msrp_cad, msrp_usd, aliases, price_basis,
+                             product_status, source_name, source_url, verified_at, notes)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (brand, model, prices.get("msrp_cad"), prices.get("msrp_usd"),
+                         json.dumps(prices.get("aliases", [])), prices.get("price_basis", "unverified"),
+                         prices.get("product_status", "unknown"), prices.get("source_name"),
+                         prices.get("source_url"), prices.get("verified_at"), prices.get("notes"))
                     )
 
+    conn.commit()
+
+
+def _catalog_entries() -> list[tuple[str, str, dict]]:
+    """Load the checked-in, source-backed reference catalog."""
+    import os
+    path = os.path.join(os.path.dirname(__file__), "msrp_data.json")
+    with open(path, encoding="utf-8") as source:
+        catalog = json.load(source)
+    return [
+        (brand, model, details)
+        for brand, models in catalog.items()
+        for model, details in models.items()
+    ]
+
+
+def _upgrade_reference_catalog(conn: sqlite3.Connection):
+    """Apply each bundled catalog revision once to existing installations."""
+    version = "2026-09-09.2"
+    row = conn.execute(
+        "SELECT value FROM settings WHERE key = 'reference_catalog_version'"
+    ).fetchone()
+    if row and json.loads(row["value"]) == version:
+        return
+
+    # The bundled set is authoritative: it consolidates Creality's Ender line
+    # and excludes broad aliases such as `xl`, `u1`, `mega`, and `v0` that match
+    # ordinary listing text.
+    conn.execute("DELETE FROM brand_keywords")
+    for brand, keywords in DEFAULT_BRAND_KEYWORDS.items():
+        for keyword in keywords:
+            conn.execute(
+                "INSERT OR IGNORE INTO brand_keywords (brand, keyword) VALUES (?, ?)",
+                (brand, keyword),
+            )
+
+    # This catalog is authoritative. Keeping older unsourced rows made them look
+    # like valid comparison data even when the UI labelled them as unverified.
+    conn.execute("DELETE FROM msrp_entries")
+    for brand, model, details in _catalog_entries():
+        upsert_msrp_entry(
+            brand, model, details.get("msrp_cad"), details.get("msrp_usd"),
+            aliases=details.get("aliases", []),
+            price_basis=details.get("price_basis", "unverified"),
+            product_status=details.get("product_status", "unknown"),
+            source_name=details.get("source_name"), source_url=details.get("source_url"),
+            verified_at=details.get("verified_at"), notes=details.get("notes"), conn=conn,
+        )
+
+    conn.execute("UPDATE listings SET brand = 'creality' WHERE brand = 'ender'")
+    conn.execute("UPDATE listings SET model = 'X1 Carbon' WHERE brand = 'bambu' AND model = 'X1C'")
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        ("reference_catalog_version", json.dumps(version)),
+    )
     conn.commit()
 
 
@@ -534,9 +645,16 @@ def get_msrp_entries(conn: Optional[sqlite3.Connection] = None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def upsert_msrp_entry(brand: str, model: str, msrp_cad: float,
+def upsert_msrp_entry(brand: str, model: str, msrp_cad: Optional[float] = None,
                       msrp_usd: Optional[float] = None,
                       retail_price: Optional[float] = None,
+                      aliases: Optional[list[str]] = None,
+                      price_basis: str = "unverified",
+                      product_status: str = "unknown",
+                      source_name: Optional[str] = None,
+                      source_url: Optional[str] = None,
+                      verified_at: Optional[str] = None,
+                      notes: Optional[str] = None,
                       conn: Optional[sqlite3.Connection] = None) -> int:
     close = conn is None
     if close:
@@ -546,15 +664,27 @@ def upsert_msrp_entry(brand: str, model: str, msrp_cad: float,
     now = datetime.now(timezone.utc).isoformat()
     
     cursor = conn.execute("""
-        INSERT INTO msrp_entries (brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO msrp_entries
+            (brand, model, msrp_cad, msrp_usd, retail_price, last_updated, aliases,
+             price_basis, product_status, source_name, source_url, verified_at, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(brand, model) DO UPDATE SET 
             msrp_cad = ?,
             msrp_usd = ?,
             retail_price = ?,
-            last_updated = ?
+            last_updated = ?,
+            aliases = ?,
+            price_basis = ?,
+            product_status = ?,
+            source_name = ?,
+            source_url = ?,
+            verified_at = ?,
+            notes = ?
     """, (brand.lower(), model, msrp_cad, msrp_usd, retail_price, now,
-           msrp_cad, msrp_usd, retail_price, now))
+           json.dumps(aliases or []), price_basis, product_status, source_name, source_url,
+           verified_at, notes, msrp_cad, msrp_usd, retail_price, now,
+           json.dumps(aliases or []), price_basis, product_status, source_name, source_url,
+           verified_at, notes))
     conn.commit()
     eid = cursor.lastrowid
     if close:
@@ -581,7 +711,8 @@ def get_msrp_map(conn: Optional[sqlite3.Connection] = None) -> dict:
         brand[e["model"]] = {
             "msrp_cad": e["msrp_cad"],
             "msrp_usd": e["msrp_usd"],
-            "retail_price": e.get("retail_price")
+            "retail_price": e.get("retail_price"),
+            "aliases": json.loads(e.get("aliases") or "[]"),
         }
     return result
 
@@ -610,14 +741,11 @@ def export_app_data(data_type: str = "all", conn: Optional[sqlite3.Connection] =
 
         if data_type in ("all", "msrp"):
             msrp = []
-            for row in conn.execute("SELECT brand, model, msrp_cad, msrp_usd, retail_price FROM msrp_entries").fetchall():
-                msrp.append({
-                    "brand": row["brand"],
-                    "model": row["model"],
-                    "msrp_cad": row["msrp_cad"],
-                    "msrp_usd": row["msrp_usd"],
-                    "retail_price": row["retail_price"]
-                })
+            for row in conn.execute("SELECT * FROM msrp_entries ORDER BY brand, model").fetchall():
+                item = dict(row)
+                item.pop("id", None)
+                item["aliases"] = json.loads(item.get("aliases") or "[]")
+                msrp.append(item)
             result["msrp_entries"] = msrp
 
         return result
@@ -672,26 +800,46 @@ def import_app_data(data: dict, data_type: str = "all", clear_existing: bool = F
             now = datetime.now(timezone.utc).isoformat()
             
             for m in msrp:
-                if "brand" in m and "model" in m and "msrp_cad" in m:
+                if "brand" in m and "model" in m and (
+                    m.get("msrp_cad") is not None or m.get("msrp_usd") is not None
+                    or m.get("source_url") or m.get("aliases")
+                ):
+                    values = (
+                        m["brand"].lower(), m["model"], m.get("msrp_cad"), m.get("msrp_usd"),
+                        m.get("retail_price"), m.get("last_updated") or now,
+                        json.dumps(m.get("aliases", [])), m.get("price_basis", "unverified"),
+                        m.get("product_status", "unknown"), m.get("source_name"),
+                        m.get("source_url"), m.get("verified_at"), m.get("notes"),
+                    )
                     if overwrite:
                         query = """
-                            INSERT INTO msrp_entries (brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
-                            VALUES (?, ?, ?, ?, ?, ?)
+                            INSERT INTO msrp_entries
+                                (brand, model, msrp_cad, msrp_usd, retail_price, last_updated,
+                                 aliases, price_basis, product_status, source_name, source_url,
+                                 verified_at, notes)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             ON CONFLICT(brand, model) DO UPDATE SET
                                 msrp_cad=excluded.msrp_cad,
                                 msrp_usd=excluded.msrp_usd,
                                 retail_price=excluded.retail_price,
-                                last_updated=excluded.last_updated
+                                last_updated=excluded.last_updated,
+                                aliases=excluded.aliases,
+                                price_basis=excluded.price_basis,
+                                product_status=excluded.product_status,
+                                source_name=excluded.source_name,
+                                source_url=excluded.source_url,
+                                verified_at=excluded.verified_at,
+                                notes=excluded.notes
                         """
                     else:
                         query = """
-                            INSERT OR IGNORE INTO msrp_entries (brand, model, msrp_cad, msrp_usd, retail_price, last_updated)
-                            VALUES (?, ?, ?, ?, ?, ?)
+                            INSERT OR IGNORE INTO msrp_entries
+                                (brand, model, msrp_cad, msrp_usd, retail_price, last_updated,
+                                 aliases, price_basis, product_status, source_name, source_url,
+                                 verified_at, notes)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """
-                    conn.execute(
-                        query,
-                        (m["brand"].lower(), m["model"], m["msrp_cad"], m.get("msrp_usd"), m.get("retail_price"), now)
-                    )
+                    conn.execute(query, values)
                     result["msrp"] += 1
         
         conn.commit()

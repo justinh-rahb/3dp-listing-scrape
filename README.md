@@ -139,6 +139,24 @@ It also includes:
 
 You can modify search queries in the Settings page of the web dashboard or by editing the database directly.
 
+### Reference-price catalog
+
+The bundled printer catalog in `msrp_data.json` records evidence with every curated
+price: the manufacturer page, verification date, price basis, product status, and
+model aliases. CAD and USD are independent fields. A missing currency stays empty;
+the app does not estimate it using an exchange rate or compare it with listings in a
+different currency.
+
+`manufacturer_list_price` means the manufacturer's displayed regular/compare-at
+price, while `manufacturer_launch_price` is a dated launch price and
+`manufacturer_current_price` is used only when the official store exposes no
+separate list price. Entries can remain in the catalog without a price so their
+aliases still improve model detection.
+
+On first startup after a catalog revision, the reference-price table is replaced
+with the bundled source-backed catalog. JSON export/import retains all provenance
+fields.
+
 ### Scraping Settings
 
 Configure scraping behavior in Settings:

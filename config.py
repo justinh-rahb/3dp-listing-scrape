@@ -107,13 +107,14 @@ DEFAULT_SEARCH_QUERIES = [
 
 DEFAULT_BRAND_KEYWORDS = {
     "bambu": ["bambu", "bambulab", "bambu lab", "x1c", "x1 carbon", "p1s", "p1p", "a1 mini", "a1mini"],
-    "prusa": ["prusa", "mk4", "mk3s", "mk3", "mini+", "xl"],
-    "creality": ["creality", "cr-10", "cr10", "k1 max", "k1c"],
-    "ender": ["ender", "ender 3", "ender3", "ender 5", "ender5"],
-    "anycubic": ["anycubic", "kobra", "vyper", "mega"],
-    "voron": ["voron", "v0", "v2.4", "trident"],
-    "elegoo": ["elegoo", "neptune"],
-    "flashforge": ["flashforge", "adventurer"],
-    "sovol": ["sovol", "sv06", "sv07"],
-    "qidi": ["qidi"],
+    "prusa": ["prusa", "original prusa", "mk4s", "mk4", "mk3s+", "mk3s", "prusa mini", "prusa xl"],
+    "creality": ["creality", "ender", "ender3", "ender 3", "ender5", "ender 5", "cr-10", "cr10", "k1 max", "k1c"],
+    "anycubic": ["anycubic", "anycubic kobra", "anycubic vyper", "anycubic mega"],
+    "voron": ["voron", "voron v0", "voron v2.4", "voron trident"],
+    "elegoo": ["elegoo", "neptune", "centauri", "centauri carbon"],
+    "flashforge": ["flashforge", "flash forge", "adventurer 5m"],
+    "sovol": ["sovol", "sovol sv06", "sovol sv07", "sovol sv08"],
+    "qidi": ["qidi", "qidi tech", "qidi3d"],
+    "snapmaker": ["snapmaker", "snapmaker u1"],
+    "infimech": ["infimech"],
 }

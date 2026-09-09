@@ -1,6 +1,8 @@
 """Price tracking, brand detection, and deal scoring."""
 
 import json
+import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -19,30 +21,56 @@ def _get_msrp_data() -> dict:
     return db.get_msrp_map()
 
 
+def _normalized_tokens(value: str) -> str:
+    """Normalize listing text while retaining meaningful model punctuation."""
+    value = unicodedata.normalize("NFKC", value or "").casefold()
+    value = re.sub(r"(?<=\w)[+](?=\s|$)", " plus ", value)
+    return " " + re.sub(r"[^a-z0-9]+", " ", value).strip() + " "
+
+
+def _matches(value: str, candidate: str) -> bool:
+    candidate_tokens = _normalized_tokens(candidate).strip()
+    return bool(candidate_tokens) and f" {candidate_tokens} " in value
+
+
 def detect_brand(title: str, description: str = "") -> Optional[str]:
     """Detect brand from title and description."""
-    combined = f"{title} {description}".lower()
-    for brand, keywords in _get_brand_keywords().items():
-        for kw in keywords:
-            if kw in combined:
-                return brand
+    combined = _normalized_tokens(f"{title} {description}")
+    candidates = [
+        (keyword, brand)
+        for brand, keywords in _get_brand_keywords().items()
+        for keyword in keywords
+    ]
+    for keyword, brand in sorted(candidates, key=lambda item: len(_normalized_tokens(item[0])), reverse=True):
+        if _matches(combined, keyword):
+            return "creality" if brand == "ender" else brand
     return None
 
 
 def detect_model(title: str, description: str = "", brand: Optional[str] = None) -> Optional[str]:
     """Detect specific model from title and description."""
-    combined = f"{title} {description}".lower()
+    combined = _normalized_tokens(f"{title} {description}")
     msrp_data = _get_msrp_data()
 
     if brand and brand in msrp_data:
-        for model_name in msrp_data[brand]:
-            if model_name.lower() in combined:
+        candidates = [
+            (alias, model_name)
+            for model_name, details in msrp_data[brand].items()
+            for alias in [model_name, *details.get("aliases", [])]
+        ]
+        for alias, model_name in sorted(candidates, key=lambda item: len(_normalized_tokens(item[0])), reverse=True):
+            if _matches(combined, alias):
                 return model_name
     else:
-        for b, models in msrp_data.items():
-            for model_name in models:
-                if model_name.lower() in combined:
-                    return model_name
+        candidates = [
+            (alias, model_name)
+            for models in msrp_data.values()
+            for model_name, details in models.items()
+            for alias in [model_name, *details.get("aliases", [])]
+        ]
+        for alias, model_name in sorted(candidates, key=lambda item: len(_normalized_tokens(item[0])), reverse=True):
+            if _matches(combined, alias):
+                return model_name
 
     return None
 
