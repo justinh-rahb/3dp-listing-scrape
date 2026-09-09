@@ -2,7 +2,7 @@
 {% block title %}Deals - 3DP Deal Tracker{% endblock %}
 
 {% block content %}
-<h4 class="mb-3">Deals <small class="text-muted">Listings with price drops or good MSRP ratios</small></h4>
+<h4 class="mb-3">Deals <small class="text-muted">Price drops, retailer sales, and prices below reference values</small></h4>
 
 {% if deals %}
 <div class="row g-3">
@@ -23,6 +23,7 @@
 
                     {% if deal.price_drop_abs > 0 %}
                     <span class="badge bg-warning text-dark">
+                        {{ "Sale" if deal.nominal_price is not none else "Price drop" }}:
                         -${{ "%.0f"|format(deal.price_drop_abs) }} ({{ "%.0f"|format(deal.price_drop_pct) }}%)
                     </span>
                     {% endif %}

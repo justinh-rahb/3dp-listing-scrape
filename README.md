@@ -105,6 +105,7 @@ The web dashboard provides:
 - **Deals**: View listings sorted by deal quality
 - **Price History**: See price changes over time
 - **Settings**: Configure scraping behavior and search queries
+- **Run History**: Inspect each query's status, failing URL, HTTP status, page counts, and error details
 
 ## Configuration
 
@@ -117,6 +118,8 @@ export SETTINGS_PASSWORD="your-strong-password"
 ```
 
 When `SETTINGS_PASSWORD` is set, opening `/settings` will require HTTP Basic auth.
+The same credential protects listing mutations, imports/exports, query management,
+and scheduler controls. If it is unset or empty, administrative access is intentionally open.
 If `SETTINGS_PASSWORD` is unset or empty, settings auth is disabled.
 
 ### Search Queries
@@ -159,6 +162,21 @@ Supported events:
 - `new_deal_detected`
 - `scrape_failed`
 
+Failure notifications identify every failed query (up to the provider message limit),
+including its label, configured URL, actual failing page URL, outcome type, HTTP status,
+error message, and scrape run ID.
+
+## Scrape Reliability
+
+Each source adapter reports one of: `success`, `empty`, `partial`, `blocked`,
+`failed`, or `unsupported`. Per-query outcomes are stored separately from aggregate
+scrape runs. Partial results are retained, but missing-listing counters are updated
+only after an authoritative successful query. Running a single query cannot age or
+deactivate listings owned by other queries.
+
+Deal notifications are recorded after successful delivery, so an unchanged deal is
+not announced on every scheduled run. A changed price creates a new notification state.
+
 ## Aurora Tech Channel Integration (Currently Disabled)
 
 The Aurora Tech Channel integration has been temporarily disabled due to HTML parsing complexity. The website structure changes frequently, making reliable scraping difficult.
@@ -193,7 +211,7 @@ The database tracks:
 ### Running Tests
 
 ```bash
-pytest
+python -m unittest discover -s tests -v
 ```
 
 ### Database Migration

@@ -32,6 +32,7 @@
 <!-- Tabs -->
 <ul class="nav nav-tabs" role="tablist">
     <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-general">General</a></li>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-runs">Run History</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-queries">Search Queries</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-brands">Brands</a></li>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-msrp">MSRP Data</a></li>
@@ -155,6 +156,63 @@
                 <span id="webhook-saved" class="text-success ms-2" style="display:none">Saved!</span>
             </div>
         </form>
+    </div>
+
+    <!-- Scrape Run Diagnostics -->
+    <div class="tab-pane" id="tab-runs">
+        {% if scrape_runs %}
+        <div class="accordion" id="scrape-runs" style="max-width: 1100px;">
+            {% for run in scrape_runs %}
+            <div class="accordion-item">
+                <h2 class="accordion-header">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#run-{{ run.id }}">
+                        <span class="badge me-2 {% if run.status == 'success' %}bg-success{% elif run.status == 'partial' %}bg-warning text-dark{% elif run.status == 'running' %}bg-info text-dark{% else %}bg-danger{% endif %}">
+                            {{ run.status|upper }}
+                        </span>
+                        <strong>Run #{{ run.id }}</strong>
+                        <span class="text-muted ms-2">{{ run.started_at[:19] }}</span>
+                        <span class="ms-auto me-3 small">
+                            {{ run.listings_found }} found · {{ run.new_listings }} new ·
+                            {{ run.queries_failed }} failed
+                        </span>
+                    </button>
+                </h2>
+                <div id="run-{{ run.id }}" class="accordion-collapse collapse" data-bs-parent="#scrape-runs">
+                    <div class="accordion-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0 align-middle">
+                                <thead><tr><th>Query</th><th>Status</th><th>Found</th><th>Pages</th><th>Diagnostic</th></tr></thead>
+                                <tbody>
+                                {% for query in run.queries %}
+                                    <tr>
+                                        <td>
+                                            <div>{{ query.label }}</div>
+                                            <a class="small text-break" href="{{ query.url }}" target="_blank" rel="noopener noreferrer">{{ query.url }}</a>
+                                        </td>
+                                        <td><span class="badge {% if query.status in ['success', 'empty'] %}bg-success{% elif query.status == 'partial' %}bg-warning text-dark{% else %}bg-danger{% endif %}">{{ query.status }}</span></td>
+                                        <td>{{ query.listings_found }}</td>
+                                        <td>{{ query.pages_completed }}/{{ query.pages_attempted }}</td>
+                                        <td class="small">
+                                            {% if query.http_status %}<strong>HTTP {{ query.http_status }}</strong><br>{% endif %}
+                                            {% if query.failed_url and query.failed_url != query.url %}<span class="text-break">{{ query.failed_url }}</span><br>{% endif %}
+                                            {% if query.error_type %}{{ query.error_type }}{% endif %}
+                                            {% if query.error_message %}: {{ query.error_message }}{% endif %}
+                                            {% if not query.error_message %}<span class="text-muted">—</span>{% endif %}
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No scrape runs have been recorded yet.</p>
+        {% endif %}
     </div>
 
     <!-- Search Queries -->

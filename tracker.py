@@ -47,14 +47,16 @@ def detect_model(title: str, description: str = "", brand: Optional[str] = None)
     return None
 
 
-def lookup_msrp(brand: Optional[str], model: Optional[str]) -> Optional[float]:
-    """Look up MSRP (CAD) for a brand/model combo."""
+def lookup_msrp(brand: Optional[str], model: Optional[str],
+                currency: str = "CAD") -> Optional[float]:
+    """Look up MSRP in the listing currency; never compare mixed currencies."""
     if not brand or not model:
         return None
     msrp_data = _get_msrp_data()
     brand_data = msrp_data.get(brand, {})
     model_data = brand_data.get(model, {})
-    return model_data.get("msrp_cad")
+    field = "msrp_usd" if (currency or "CAD").upper() == "USD" else "msrp_cad"
+    return model_data.get(field)
 
 
 def lookup_retail_price(brand: Optional[str], model: Optional[str]) -> Optional[float]:
@@ -81,6 +83,10 @@ def compute_deals(listings: list[dict]) -> list[Deal]:
 
         price_drop = original - current
         msrp = listing.get("msrp")
+        msrp_currency = (listing.get("msrp_currency") or "").upper()
+        listing_currency = (listing.get("currency") or "USD").upper()
+        if msrp_currency and msrp_currency != listing_currency:
+            msrp = None
         brand = listing.get("brand")
         model = listing.get("model")
         
@@ -133,6 +139,7 @@ def compute_deals(listings: list[dict]) -> list[Deal]:
             source=listing.get("source") or "kijiji",
             brand=brand,
             msrp=msrp,
+            msrp_currency=msrp_currency or None,
             retail_price=retail_price,
             price_to_msrp_ratio=msrp_ratio,
             price_to_retail_ratio=retail_ratio,

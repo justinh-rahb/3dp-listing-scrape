@@ -66,6 +66,13 @@ def scrape(query, max_pages):
 
     click.echo(f"\nDone! Found: {result['found']}, New: {result['new']}, "
                f"Price changes: {result['price_changes']}, Errors: {result['errors']}")
+    for failure in result.get("failures", []):
+        click.echo(
+            f"  - {failure['label']}: {failure.get('error_message') or failure['status']} "
+            f"({failure.get('failed_url') or failure['url']})"
+        )
+    if result["errors"]:
+        sys.exit(1)
 
 
 @cli.command()
@@ -109,7 +116,7 @@ def stats():
         run = s["last_run"]
         click.echo(f"\n  Last scrape: {run['started_at']}")
         click.echo(f"    Found: {run['listings_found']}, New: {run['new_listings']}, "
-                    f"Price changes: {run['price_changes']}")
+                    f"Price changes: {run['price_changes']}, Status: {run.get('status', 'unknown')}")
 
 
 @cli.command()

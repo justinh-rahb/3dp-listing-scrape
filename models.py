@@ -1,7 +1,10 @@
 """Data classes for the 3D Printer Kijiji Deal Tracker."""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Literal, Optional
+
+
+ScrapeStatus = Literal["success", "empty", "partial", "blocked", "failed", "unsupported"]
 
 
 @dataclass
@@ -23,6 +26,30 @@ class ScrapedListing:
 
 
 @dataclass
+class ScrapeOutcome:
+    """Structured result returned by every source adapter."""
+
+    status: ScrapeStatus
+    requested_url: str
+    listings: list[ScrapedListing] = field(default_factory=list)
+    pages_attempted: int = 0
+    pages_completed: int = 0
+    failed_url: Optional[str] = None
+    http_status: Optional[int] = None
+    error_type: Optional[str] = None
+    error_message: Optional[str] = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status in {"success", "empty"}
+
+    @property
+    def can_mark_missing(self) -> bool:
+        """Only authoritative non-empty results may age unseen listings."""
+        return self.status == "success"
+
+
+@dataclass
 class Deal:
     """Computed deal information for the dashboard."""
     kijiji_id: str
@@ -38,6 +65,7 @@ class Deal:
     source: str = "kijiji"
     brand: Optional[str] = None
     msrp: Optional[float] = None
+    msrp_currency: Optional[str] = None
     retail_price: Optional[float] = None
     price_to_msrp_ratio: Optional[float] = None
     price_to_retail_ratio: Optional[float] = None

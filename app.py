@@ -68,6 +68,16 @@ def parse_optional_float(value: Optional[str]) -> Optional[float]:
         return None
 
 
+def parse_stale_days(value: Optional[str]) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        days = int(value)
+    except ValueError:
+        return None
+    return days if 1 <= days <= 3650 else None
+
+
 def require_settings_auth(credentials: Optional[HTTPBasicCredentials] = Depends(settings_auth)) -> None:
     """Protect settings UI and APIs when SETTINGS_PASSWORD is configured."""
     if not SETTINGS_PASSWORD:
@@ -87,7 +97,9 @@ def require_settings_auth(credentials: Optional[HTTPBasicCredentials] = Depends(
 async def index(request: Request, brand: Optional[str] = None, model: Optional[str] = None,
                 min_price: Optional[str] = None, max_price: Optional[str] = None,
                 search: Optional[str] = None,
-                active_only: str = "1", show_hidden: str = "0",
+                listing_status: Optional[str] = None, active_only: Optional[str] = None,
+                stale_days: Optional[str] = None,
+                show_hidden: str = "0",
                 starred_only: str = "0", sort_by: str = "last_seen"):
     sort_aliases = {
         "last_seen": "last_seen_desc",
@@ -99,6 +111,10 @@ async def index(request: Request, brand: Optional[str] = None, model: Optional[s
 
     min_price_value = parse_optional_float(min_price)
     max_price_value = parse_optional_float(max_price)
+    stale_days_value = parse_stale_days(stale_days)
+    if listing_status not in {"active", "inactive", "all"}:
+        # Keep old bookmarked URLs working while replacing the ambiguous checkbox.
+        listing_status = "all" if active_only == "0" else "active"
 
     filters = {
         "brand": brand,
@@ -106,7 +122,8 @@ async def index(request: Request, brand: Optional[str] = None, model: Optional[s
         "min_price": min_price_value,
         "max_price": max_price_value,
         "search": search,
-        "active_only": active_only == "1",
+        "listing_status": listing_status,
+        "stale_days": stale_days_value,
         "show_hidden": show_hidden == "1",
         "starred_only": starred_only == "1",
         "sort_by": current_sort,
@@ -140,10 +157,15 @@ async def index(request: Request, brand: Optional[str] = None, model: Optional[s
     brands = db.get_distinct_brands()
     models = db.get_distinct_models()
     stats = db.get_stats()
+    stale_prune_count = (
+        db.count_stale_listings(stale_days_value, listing_status)
+        if stale_days_value else 0
+    )
     sched_status = scheduler.get_status()
-    return templates.TemplateResponse("index.html", {
+    return templates.TemplateResponse(request=request, name="index.html", context={
         "request": request, "listings": listings, "brands": brands, "models": models,
         "filters": filters, "stats": stats, "scheduler": sched_status,
+        "stale_prune_count": stale_prune_count,
         "sort_urls": sort_urls, "sort_icons": sort_icons,
     })
 
@@ -154,46 +176,46 @@ async def listing_detail(request: Request, kijiji_id: str):
     if not listing:
         return HTMLResponse("Listing not found", status_code=404)
     price_history = db.get_price_history(kijiji_id)
-    return templates.TemplateResponse("listing.html", {
+    return templates.TemplateResponse(request=request, name="listing.html", context={
         "request": request, "listing": listing, "price_history": price_history,
     })
 
 
 @app.post("/listing/{kijiji_id}/hide")
-async def hide_listing(request: Request, kijiji_id: str):
+async def hide_listing(request: Request, kijiji_id: str, _: None = Depends(require_settings_auth)):
     db.set_listing_hidden(kijiji_id, True)
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
 
 @app.post("/listing/{kijiji_id}/unhide")
-async def unhide_listing(request: Request, kijiji_id: str):
+async def unhide_listing(request: Request, kijiji_id: str, _: None = Depends(require_settings_auth)):
     db.set_listing_hidden(kijiji_id, False)
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
 
 @app.post("/api/listing/{kijiji_id}/hide")
-async def api_hide_listing(kijiji_id: str):
+async def api_hide_listing(kijiji_id: str, _: None = Depends(require_settings_auth)):
     """JSON endpoint for hiding listing without page refresh."""
     db.set_listing_hidden(kijiji_id, True)
     return {"ok": True, "kijiji_id": kijiji_id, "is_hidden": True}
 
 
 @app.post("/api/listing/{kijiji_id}/unhide")
-async def api_unhide_listing(kijiji_id: str):
+async def api_unhide_listing(kijiji_id: str, _: None = Depends(require_settings_auth)):
     """JSON endpoint for unhiding listing without page refresh."""
     db.set_listing_hidden(kijiji_id, False)
     return {"ok": True, "kijiji_id": kijiji_id, "is_hidden": False}
 
 
 @app.post("/api/listing/{kijiji_id}/star")
-async def api_star_listing(kijiji_id: str):
+async def api_star_listing(kijiji_id: str, _: None = Depends(require_settings_auth)):
     """JSON endpoint for starring listing without page refresh."""
     db.set_listing_starred(kijiji_id, True)
     return {"ok": True, "kijiji_id": kijiji_id, "is_starred": True}
 
 
 @app.post("/api/listing/{kijiji_id}/unstar")
-async def api_unstar_listing(kijiji_id: str):
+async def api_unstar_listing(kijiji_id: str, _: None = Depends(require_settings_auth)):
     """JSON endpoint for unstarring listing without page refresh."""
     db.set_listing_starred(kijiji_id, False)
     return {"ok": True, "kijiji_id": kijiji_id, "is_starred": False}
@@ -205,7 +227,8 @@ class ListingMetadataUpdate(BaseModel):
 
 
 @app.put("/api/listing/{kijiji_id}/metadata")
-async def api_update_listing_metadata(kijiji_id: str, data: ListingMetadataUpdate):
+async def api_update_listing_metadata(kijiji_id: str, data: ListingMetadataUpdate,
+                                      _: None = Depends(require_settings_auth)):
     if data.brand is None and data.model is None:
         raise HTTPException(status_code=400, detail="At least one field is required")
 
@@ -223,6 +246,7 @@ async def api_update_listing_metadata(kijiji_id: str, data: ListingMetadataUpdat
         "brand": updated.get("brand") if updated else None,
         "model": updated.get("model") if updated else None,
         "msrp": updated.get("msrp") if updated else None,
+        "msrp_currency": updated.get("msrp_currency") if updated else None,
     }
 
 
@@ -232,7 +256,7 @@ class BulkHideRequest(BaseModel):
 
 
 @app.post("/api/listings/bulk-hide")
-async def api_bulk_hide(data: BulkHideRequest):
+async def api_bulk_hide(data: BulkHideRequest, _: None = Depends(require_settings_auth)):
     """Bulk hide/unhide multiple listings."""
     conn = db.get_conn()
     try:
@@ -252,7 +276,7 @@ async def api_bulk_hide(data: BulkHideRequest):
 
 
 @app.delete("/api/listing/{kijiji_id}")
-async def api_delete_listing(kijiji_id: str):
+async def api_delete_listing(kijiji_id: str, _: None = Depends(require_settings_auth)):
     deleted = db.delete_listing(kijiji_id)
     return {"ok": deleted, "kijiji_id": kijiji_id}
 
@@ -262,7 +286,7 @@ class BulkDeleteRequest(BaseModel):
 
 
 @app.post("/api/listings/bulk-delete")
-async def api_bulk_delete(data: BulkDeleteRequest):
+async def api_bulk_delete(data: BulkDeleteRequest, _: None = Depends(require_settings_auth)):
     conn = db.get_conn()
     try:
         deleted = db.delete_listings(data.kijiji_ids, conn=conn)
@@ -275,11 +299,34 @@ async def api_bulk_delete(data: BulkDeleteRequest):
         conn.close()
 
 
+@app.delete("/api/listings/inactive")
+async def api_delete_inactive_listings(_: None = Depends(require_settings_auth)):
+    """Permanently delete every listing already marked inactive."""
+    deleted = db.delete_inactive_listings()
+    return {"ok": True, "deleted": deleted}
+
+
+class StaleDeleteRequest(BaseModel):
+    days: int
+    listing_status: str = "all"
+
+
+@app.post("/api/listings/prune-stale")
+async def api_delete_stale_listings(data: StaleDeleteRequest,
+                                    _: None = Depends(require_settings_auth)):
+    if not 1 <= data.days <= 3650:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 3650")
+    if data.listing_status not in {"active", "inactive", "all"}:
+        raise HTTPException(status_code=400, detail="invalid listing status")
+    deleted = db.delete_stale_listings(data.days, data.listing_status)
+    return {"ok": True, "deleted": deleted, "days": data.days}
+
+
 @app.get("/deals", response_class=HTMLResponse)
 async def deals_page(request: Request):
     listings = db.get_listings({"active_only": True})
     deal_list = compute_deals(listings)
-    return templates.TemplateResponse("deals.html", {
+    return templates.TemplateResponse(request=request, name="deals.html", context={
         "request": request, "deals": deal_list,
     })
 
@@ -291,9 +338,11 @@ async def settings_page(request: Request, _: None = Depends(require_settings_aut
     brands = db.get_brand_keywords()
     msrp = db.get_msrp_entries()
     sched_status = scheduler.get_status()
-    return templates.TemplateResponse("settings.html", {
+    scrape_runs = db.get_recent_scrape_runs(limit=10)
+    return templates.TemplateResponse(request=request, name="settings.html", context={
         "request": request, "settings": settings, "queries": queries,
         "brands": brands, "msrp": msrp, "scheduler": sched_status,
+        "scrape_runs": scrape_runs,
     })
 
 
@@ -374,8 +423,8 @@ async def api_clear_db(data: ClearDbRequest, _: None = Depends(require_settings_
 
 
 @app.get("/api/settings/export")
-async def api_export_data(data_type: str = "all"):
-    """Export app data as JSON (open endpoint)."""
+async def api_export_data(data_type: str = "all", _: None = Depends(require_settings_auth)):
+    """Export app data as JSON."""
     from fastapi.responses import JSONResponse
     from datetime import datetime
     
@@ -426,6 +475,11 @@ async def api_import_data(
 @app.get("/api/search-queries")
 async def api_list_queries(_: None = Depends(require_settings_auth)):
     return db.get_search_queries()
+
+
+@app.get("/api/scrape-runs")
+async def api_scrape_runs(limit: int = 20, _: None = Depends(require_settings_auth)):
+    return db.get_recent_scrape_runs(limit=max(1, min(limit, 100)))
 
 
 class SearchQueryCreate(BaseModel):
@@ -526,18 +580,18 @@ async def api_scheduler_status():
 
 
 @app.post("/api/scheduler/start")
-async def api_scheduler_start():
+async def api_scheduler_start(_: None = Depends(require_settings_auth)):
     interval = db.get_setting("scrape_interval_hours", 6)
     scheduler.start_scheduler(interval)
     return scheduler.get_status()
 
 
 @app.post("/api/scheduler/stop")
-async def api_scheduler_stop():
+async def api_scheduler_stop(_: None = Depends(require_settings_auth)):
     scheduler.stop_scheduler()
     return scheduler.get_status()
 
 
 @app.post("/api/scheduler/trigger")
-async def api_scheduler_trigger():
+async def api_scheduler_trigger(_: None = Depends(require_settings_auth)):
     return scheduler.trigger_now()
