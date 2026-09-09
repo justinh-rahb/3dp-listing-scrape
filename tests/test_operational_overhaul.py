@@ -114,6 +114,10 @@ class ListingManagementTests(DatabaseTestCase):
         self.add_listing("keep")
         self.add_listing("prune")
         self.conn.execute("UPDATE listings SET is_active = 0 WHERE kijiji_id = 'prune'")
+        self.conn.execute(
+            "INSERT INTO price_snapshots (kijiji_id, price, scraped_at) VALUES (?, ?, ?)",
+            ("prune", 100, "2026-09-09T00:00:00+00:00"),
+        )
         self.conn.commit()
 
         deleted = db.delete_inactive_listings(self.conn)
@@ -122,6 +126,10 @@ class ListingManagementTests(DatabaseTestCase):
         self.assertEqual(1, deleted)
         self.assertIsNotNone(db.get_listing("keep", self.conn))
         self.assertIsNone(db.get_listing("prune", self.conn))
+        snapshots = self.conn.execute(
+            "SELECT COUNT(*) AS c FROM price_snapshots WHERE kijiji_id = 'prune'"
+        ).fetchone()["c"]
+        self.assertEqual(0, snapshots)
 
     def test_stale_filter_and_prune_handle_legacy_active_rows(self):
         self.add_listing("fresh")
@@ -129,6 +137,10 @@ class ListingManagementTests(DatabaseTestCase):
         self.conn.execute(
             "UPDATE listings SET last_seen = '2020-01-01T00:00:00+00:00' "
             "WHERE kijiji_id = 'legacy-stale'"
+        )
+        self.conn.execute(
+            "INSERT INTO price_snapshots (kijiji_id, price, scraped_at) VALUES (?, ?, ?)",
+            ("legacy-stale", 100, "2020-01-01T00:00:00+00:00"),
         )
         self.conn.commit()
 

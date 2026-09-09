@@ -425,14 +425,17 @@ async function pruneInactiveListings(count) {
 
     try {
         const response = await fetch('/api/listings/inactive', {method: 'DELETE'});
-        if (!response.ok) throw new Error('Inactive listing cleanup failed');
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.detail || `Inactive listing cleanup failed (HTTP ${response.status})`);
+        }
 
         const data = await response.json();
         window.location.reload();
     } catch (error) {
         console.error('Inactive listing cleanup error:', error);
         if (button) button.disabled = false;
-        await showAlertModal('Failed to delete inactive listings. Please try again.', 'Cleanup Failed');
+        await showAlertModal(error.message, 'Cleanup Failed');
     }
 }
 
@@ -455,12 +458,15 @@ async function pruneStaleListings(count, days, listingStatus) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({days, listing_status: listingStatus}),
         });
-        if (!response.ok) throw new Error('Stale listing cleanup failed');
+        if (!response.ok) {
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.detail || `Stale listing cleanup failed (HTTP ${response.status})`);
+        }
         window.location.reload();
     } catch (error) {
         console.error('Stale listing cleanup error:', error);
         if (button) button.disabled = false;
-        await showAlertModal('Failed to delete stale listings. Please try again.', 'Cleanup Failed');
+        await showAlertModal(error.message, 'Cleanup Failed');
     }
 }
 

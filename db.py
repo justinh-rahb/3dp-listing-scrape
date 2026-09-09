@@ -1255,8 +1255,15 @@ def delete_inactive_listings(conn: Optional[sqlite3.Connection] = None) -> int:
     if close:
         conn = get_conn()
 
-    cursor = conn.execute("DELETE FROM listings WHERE is_active = 0")
-    deleted = cursor.rowcount
+    listing_ids = [
+        row["kijiji_id"]
+        for row in conn.execute(
+            "SELECT kijiji_id FROM listings WHERE is_active = 0"
+        ).fetchall()
+    ]
+    # price_snapshots predates the newer cascading foreign keys, so route
+    # cleanup through the dependency-aware deletion function.
+    deleted = delete_listings(listing_ids, conn=conn)
 
     if close:
         conn.commit()
@@ -1295,8 +1302,13 @@ def delete_stale_listings(days: int, listing_status: str = "all",
     if close:
         conn = get_conn()
     where, params = _stale_where(days, listing_status)
-    cursor = conn.execute(f"DELETE FROM listings WHERE {where}", params)
-    deleted = cursor.rowcount
+    listing_ids = [
+        row["kijiji_id"]
+        for row in conn.execute(
+            f"SELECT kijiji_id FROM listings WHERE {where}", params
+        ).fetchall()
+    ]
+    deleted = delete_listings(listing_ids, conn=conn)
     if close:
         conn.commit()
         conn.close()
