@@ -1,53 +1,49 @@
 {
-    "bambu": {
-        "A1 Mini": {"msrp_usd": 199, "msrp_cad": 270},
-        "A1": {"msrp_usd": 399, "msrp_cad": 540},
-        "P1P": {"msrp_usd": 599, "msrp_cad": 810},
-        "P1S": {"msrp_usd": 699, "msrp_cad": 950},
-        "X1 Carbon": {"msrp_usd": 1199, "msrp_cad": 1620},
-        "X1C": {"msrp_usd": 1199, "msrp_cad": 1620}
-    },
-    "prusa": {
-        "Mini+": {"msrp_usd": 429, "msrp_cad": 580},
-        "MK3S+": {"msrp_usd": 799, "msrp_cad": 1080},
-        "MK4": {"msrp_usd": 799, "msrp_cad": 1080},
-        "MK4S": {"msrp_usd": 899, "msrp_cad": 1215},
-        "XL": {"msrp_usd": 1999, "msrp_cad": 2700}
-    },
-    "creality": {
-        "Ender 3 V3": {"msrp_usd": 199, "msrp_cad": 270},
-        "Ender 3 V3 KE": {"msrp_usd": 269, "msrp_cad": 365},
-        "K1": {"msrp_usd": 419, "msrp_cad": 570},
-        "K1 Max": {"msrp_usd": 599, "msrp_cad": 810},
-        "K1C": {"msrp_usd": 479, "msrp_cad": 650}
-    },
-    "ender": {
-        "Ender 3": {"msrp_usd": 189, "msrp_cad": 255},
-        "Ender 3 V2": {"msrp_usd": 259, "msrp_cad": 350},
-        "Ender 3 V3": {"msrp_usd": 199, "msrp_cad": 270},
-        "Ender 3 S1": {"msrp_usd": 399, "msrp_cad": 540},
-        "Ender 5 S1": {"msrp_usd": 479, "msrp_cad": 650}
-    },
-    "anycubic": {
-        "Kobra 2": {"msrp_usd": 239, "msrp_cad": 325},
-        "Kobra 2 Max": {"msrp_usd": 449, "msrp_cad": 610},
-        "Kobra 3": {"msrp_usd": 399, "msrp_cad": 540}
-    },
-    "elegoo": {
-        "Neptune 4": {"msrp_usd": 239, "msrp_cad": 325},
-        "Neptune 4 Pro": {"msrp_usd": 299, "msrp_cad": 405},
-        "Neptune 4 Plus": {"msrp_usd": 379, "msrp_cad": 512}
-    },
-    "flashforge": {
-        "Adventurer 5M": {"msrp_usd": 379, "msrp_cad": 512},
-        "Adventurer 5M Pro": {"msrp_usd": 499, "msrp_cad": 675}
-    },
-    "sovol": {
-        "SV06": {"msrp_usd": 239, "msrp_cad": 325},
-        "SV07": {"msrp_usd": 339, "msrp_cad": 460}
-    },
-    "qidi": {
-        "X-Max 3": {"msrp_usd": 599, "msrp_cad": 810},
-        "X-Plus 3": {"msrp_usd": 499, "msrp_cad": 675}
-    }
+  "bambu": {
+    "A1 Mini": {"msrp_cad": 389, "aliases": ["A1Mini"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Bambu Lab Canada", "source_url": "https://ca.store.bambulab.com/products/a1-mini", "verified_at": "2026-09-09"},
+    "A1": {"msrp_cad": 519, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Bambu Lab Canada", "source_url": "https://ca.store.bambulab.com/products/a1", "verified_at": "2026-09-09"},
+    "P1P": {"msrp_cad": 899, "price_basis": "manufacturer_list_price", "product_status": "discontinued", "source_name": "Bambu Lab Canada", "source_url": "https://ca.store.bambulab.com/products/p1p", "verified_at": "2026-09-09"},
+    "P1S": {"price_basis": "unavailable", "product_status": "current", "source_name": "Bambu Lab Canada", "source_url": "https://ca.store.bambulab.com/products/p1s", "verified_at": "2026-09-09", "notes": "Retained for model matching. The storefront result did not expose a sufficiently clear printer-only list price."},
+    "X1 Carbon": {"aliases": ["X1C", "X1 Carbon"], "price_basis": "unavailable", "product_status": "discontinued", "source_name": "Bambu Lab", "source_url": "https://blog.bambulab.com/the-x1-series-is-eol-the-standard-it-set-will-remain-forever/", "verified_at": "2026-09-09", "notes": "Retained for model matching. No official Canadian list-price source was available at verification time."}
+  },
+  "prusa": {
+    "Mini+": {"msrp_usd": 449, "aliases": ["Prusa Mini", "Original Prusa Mini+"], "price_basis": "manufacturer_current_price", "product_status": "current", "source_name": "Prusa Research", "source_url": "https://www.prusa3d.com/en/product/original-prusa-mini-kit-6/", "verified_at": "2026-09-09", "notes": "Kit price."},
+    "MK4": {"msrp_usd": 799, "aliases": ["Original Prusa MK4"], "price_basis": "manufacturer_launch_price", "product_status": "discontinued", "source_name": "Prusa Research", "source_url": "https://blog.prusa3d.com/announcing-original-prusa-mk4_76585/", "verified_at": "2026-09-09", "notes": "Kit launch price."},
+    "MK4S": {"msrp_usd": 729, "aliases": ["Original Prusa MK4S"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Prusa Research", "source_url": "https://www.prusa3d.com/product/original-prusa-mk4s/", "verified_at": "2026-09-09", "notes": "Kit price."},
+    "CORE One": {"msrp_usd": 949, "aliases": ["CoreOne", "Core 1"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Prusa Research", "source_url": "https://www.prusa3d.com/product/original-prusa-mk4s/", "verified_at": "2026-09-09", "notes": "Kit price from official comparison table."},
+    "XL": {"msrp_usd": 1999, "aliases": ["Prusa XL", "Original Prusa XL"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Prusa Research", "source_url": "https://www.prusa3d.com/product/original-prusa-xl-5/", "verified_at": "2026-09-09", "notes": "Single-tool kit price."}
+  },
+  "creality": {
+    "Ender 3 V3": {"msrp_cad": 519, "aliases": ["Ender3 V3"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/products/ender-3-v3-corexz-3d-printer", "verified_at": "2026-09-09"},
+    "Ender 3 V3 KE": {"msrp_cad": 419, "aliases": ["Ender3 V3 KE"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/products/ender-3-v3-ke-3d-printer", "verified_at": "2026-09-09"},
+    "Ender 3 V3 SE": {"msrp_cad": 269, "aliases": ["Ender3 V3 SE"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/collections/ender-3-series", "verified_at": "2026-09-09"},
+    "Ender 3 S1": {"msrp_cad": 469, "aliases": ["Ender3 S1"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/collections/ender-3-series", "verified_at": "2026-09-09"},
+    "Ender 3 S1 Pro": {"msrp_cad": 619, "aliases": ["Ender3 S1 Pro"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/collections/ender-3-series", "verified_at": "2026-09-09"},
+    "Ender 3 S1 Plus": {"msrp_cad": 669, "aliases": ["Ender3 S1 Plus"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/collections/ender-3-series", "verified_at": "2026-09-09"},
+    "K1": {"msrp_cad": 459, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/products/k1-series-3d-printer", "verified_at": "2026-09-09"},
+    "K1C": {"msrp_cad": 629, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/blogs/news/creality-anniversary-sale", "verified_at": "2026-09-09"},
+    "K1 Max": {"msrp_cad": 969, "aliases": ["K1Max"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Creality Canada", "source_url": "https://store.creality.com/ca/blogs/news/creality-anniversary-sale", "verified_at": "2026-09-09"}
+  },
+  "anycubic": {
+    "Kobra 2 Max": {"msrp_usd": 639, "aliases": ["Kobra2 Max"], "price_basis": "manufacturer_current_price", "product_status": "discontinued", "source_name": "Anycubic", "source_url": "https://store.anycubic.com/products/kobra-2-max", "verified_at": "2026-09-09"},
+    "Kobra 3 Combo": {"msrp_usd": 549.99, "aliases": ["Kobra3 Combo"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Anycubic", "source_url": "https://store.anycubic.com/products/anycubic-kobra-3-combo-1", "verified_at": "2026-09-09"}
+  },
+  "elegoo": {
+    "Neptune 4": {"msrp_cad": 337, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Elegoo Canada", "source_url": "https://ca.elegoo.com/products/elegoo-neptune-4-fdm-3d-printer", "verified_at": "2026-09-09"},
+    "Neptune 4 Pro": {"msrp_cad": 404, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Elegoo Canada", "source_url": "https://ca.elegoo.com/products/elegoo-neptune-4-pro-fdm-3d-printer", "verified_at": "2026-09-09"},
+    "Neptune 4 Plus": {"msrp_cad": 524, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Elegoo Canada", "source_url": "https://ca.elegoo.com/products/neptune-4-plus-fdm-3d-printer", "verified_at": "2026-09-09"},
+    "Neptune 4 Max": {"msrp_cad": 699, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Elegoo Canada", "source_url": "https://ca.elegoo.com/products/neptune-4-max-fdm-3d-printer", "verified_at": "2026-09-09"},
+    "Centauri Carbon": {"msrp_cad": 624, "aliases": ["CentauriCarbon"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Elegoo Canada", "source_url": "https://ca.elegoo.com/collections/fdm-printers", "verified_at": "2026-09-09"}
+  },
+  "sovol": {
+    "SV06 ACE": {"msrp_usd": 299, "aliases": ["SV06ACE"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Sovol", "source_url": "https://www.sovol3d.com/products/sv04", "verified_at": "2026-09-09"},
+    "SV07": {"msrp_usd": 289, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Sovol", "source_url": "https://www.sovol3d.com/products/sv04", "verified_at": "2026-09-09"},
+    "SV08": {"msrp_usd": 599, "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Sovol", "source_url": "https://www.sovol3d.com/products/sovol-sv08-3d-printer", "verified_at": "2026-09-09"},
+    "SV08 Max": {"msrp_usd": 1299, "aliases": ["SV08Max"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "Sovol", "source_url": "https://www.sovol3d.com/products/sovol-sv08-max-3d-printer", "verified_at": "2026-09-09"}
+  },
+  "qidi": {
+    "Plus4": {"msrp_cad": 1499, "aliases": ["Plus 4", "Qidi Plus4"], "price_basis": "manufacturer_list_price", "product_status": "discontinued", "source_name": "QIDI Canada", "source_url": "https://ca.qidi3d.com/products/plus4-3d-printer", "verified_at": "2026-09-09"},
+    "Max4": {"msrp_cad": 1599, "aliases": ["Max 4", "Qidi Max4"], "price_basis": "manufacturer_list_price", "product_status": "current", "source_name": "QIDI Canada", "source_url": "https://ca.qidi3d.com/products/max4", "verified_at": "2026-09-09"},
+    "Q2": {"msrp_cad": 689, "aliases": ["Qidi Q2"], "price_basis": "manufacturer_current_price", "product_status": "current", "source_name": "QIDI Canada", "source_url": "https://ca.qidi3d.com/products/qidi-q2", "verified_at": "2026-09-09", "notes": "Official store publishes no separate compare-at/list price."}
+  }
 }

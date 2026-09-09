@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -208,6 +209,76 @@ class CurrencySafetyTests(unittest.TestCase):
         deal = tracker.compute_deals([listing])[0]
 
         self.assertIsNone(deal.price_to_msrp_ratio)
+
+
+class CatalogQualityTests(DatabaseTestCase):
+    def test_catalog_upgrade_removes_legacy_unverified_rows(self):
+        db.upsert_msrp_entry("legacy", "Mystery 9000", 123, conn=self.conn)
+        db.add_brand_keyword("legacy", "mystery", conn=self.conn)
+        self.conn.execute("DELETE FROM settings WHERE key = 'reference_catalog_version'")
+        self.conn.commit()
+
+        db._upgrade_reference_catalog(self.conn)
+
+        models = {(row["brand"], row["model"]) for row in db.get_msrp_entries(self.conn)}
+        self.assertNotIn(("legacy", "Mystery 9000"), models)
+        self.assertEqual(len(db._catalog_entries()), len(models))
+        self.assertNotIn("legacy", db.get_brand_keywords_map(self.conn))
+
+    def test_bundled_catalog_requires_evidence_and_never_invents_second_currency(self):
+        for brand, model, details in db._catalog_entries():
+            with self.subTest(brand=brand, model=model):
+                self.assertTrue(details.get("source_url", "").startswith("https://"))
+                self.assertTrue(details.get("source_name"))
+                self.assertRegex(details.get("verified_at", ""), r"^\d{4}-\d{2}-\d{2}$")
+                self.assertIn(details.get("product_status"), {"current", "discontinued"})
+                self.assertFalse(
+                    details.get("msrp_cad") is not None and details.get("msrp_usd") is not None,
+                    "Bundled prices must come from a source, not an implicit conversion",
+                )
+                if details.get("price_basis") == "unavailable":
+                    self.assertIsNone(details.get("msrp_cad"))
+                    self.assertIsNone(details.get("msrp_usd"))
+                else:
+                    self.assertTrue(
+                        details.get("msrp_cad") is not None or details.get("msrp_usd") is not None
+                    )
+
+    def test_catalog_keeps_source_provenance_and_currency_independent(self):
+        entries = {
+            (entry["brand"], entry["model"]): entry
+            for entry in db.get_msrp_entries(self.conn)
+        }
+        prusa = entries[("prusa", "MK4S")]
+        self.assertIsNone(prusa["msrp_cad"])
+        self.assertEqual(729, prusa["msrp_usd"])
+        self.assertEqual("manufacturer_list_price", prusa["price_basis"])
+        self.assertTrue(prusa["source_url"].startswith("https://www.prusa3d.com/"))
+        self.assertEqual("2026-09-09", prusa["verified_at"])
+
+    def test_export_import_round_trip_preserves_catalog_evidence(self):
+        exported = db.export_app_data("msrp", self.conn)
+        self.conn.execute("DELETE FROM msrp_entries")
+        result = db.import_app_data(exported, "msrp", conn=self.conn)
+        self.assertGreater(result["msrp"], 0)
+        restored = next(
+            row for row in db.get_msrp_entries(self.conn)
+            if row["brand"] == "bambu" and row["model"] == "X1 Carbon"
+        )
+        self.assertIn("X1C", json.loads(restored["aliases"]))
+        self.assertEqual("discontinued", restored["product_status"])
+
+    def test_model_matching_prefers_specific_models_and_aliases(self):
+        with patch.object(tracker, "_get_msrp_data", return_value=db.get_msrp_map(self.conn)):
+            self.assertEqual("A1 Mini", tracker.detect_model("Bambu Lab A1 Mini", brand="bambu"))
+            self.assertEqual("K1C", tracker.detect_model("Creality K1C", brand="creality"))
+            self.assertEqual("X1 Carbon", tracker.detect_model("Bambu X1C", brand="bambu"))
+
+    def test_brand_matching_uses_boundaries_and_canonical_creality(self):
+        keywords = db.get_brand_keywords_map(self.conn)
+        with patch.object(tracker, "_get_brand_keywords", return_value=keywords):
+            self.assertEqual("creality", tracker.detect_brand("Ender 3 V3 printer"))
+            self.assertIsNone(tracker.detect_brand("Excellent printer with mega bundle"))
 
 
 class SchedulerDiagnosticsTests(DatabaseTestCase):

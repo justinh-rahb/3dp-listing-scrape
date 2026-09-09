@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import db
 import scheduler
@@ -556,13 +556,27 @@ async def api_list_msrp(_: None = Depends(require_settings_auth)):
 class MsrpCreate(BaseModel):
     brand: str
     model: str
-    msrp_cad: float
+    msrp_cad: Optional[float] = None
     msrp_usd: Optional[float] = None
+    aliases: list[str] = Field(default_factory=list)
+    price_basis: str = "unverified"
+    product_status: str = "unknown"
+    source_name: Optional[str] = None
+    source_url: Optional[str] = None
+    verified_at: Optional[str] = None
+    notes: Optional[str] = None
 
 
 @app.post("/api/msrp")
 async def api_upsert_msrp(data: MsrpCreate, _: None = Depends(require_settings_auth)):
-    eid = db.upsert_msrp_entry(data.brand, data.model, data.msrp_cad, data.msrp_usd)
+    if data.msrp_cad is None and data.msrp_usd is None:
+        raise HTTPException(status_code=422, detail="Provide a CAD or USD reference price")
+    eid = db.upsert_msrp_entry(
+        data.brand, data.model, data.msrp_cad, data.msrp_usd,
+        aliases=data.aliases, price_basis=data.price_basis,
+        product_status=data.product_status, source_name=data.source_name,
+        source_url=data.source_url, verified_at=data.verified_at, notes=data.notes,
+    )
     return {"id": eid, "brand": data.brand, "model": data.model, "msrp_cad": data.msrp_cad}
 
 
