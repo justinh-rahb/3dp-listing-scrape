@@ -56,6 +56,177 @@ class ScraperOutcomeTests(unittest.TestCase):
         self.assertIn("page-2", outcome.failed_url)
 
 
+class KijijiPaginationAndExtractionTests(unittest.TestCase):
+    def setUp(self):
+        self.scraper = KijijiScraper(delay_min=0, delay_max=0)
+
+    def test_build_page_url_with_and_without_query_params(self):
+        base_simple = "https://www.kijiji.ca/b-hamilton/3d-printer/k0l80014"
+        self.assertEqual(base_simple, self.scraper._build_page_url(base_simple, 1))
+        self.assertEqual(
+            "https://www.kijiji.ca/b-hamilton/3d-printer/page-2/k0l80014",
+            self.scraper._build_page_url(base_simple, 2),
+        )
+
+        base_query = (
+            "https://www.kijiji.ca/b-hamilton/3d-printer/k0l80014?"
+            "address=505%20York%20Blvd&dc=true&radius=50.0"
+        )
+        self.assertEqual(base_query, self.scraper._build_page_url(base_query, 1))
+        self.assertEqual(
+            "https://www.kijiji.ca/b-hamilton/3d-printer/page-2/k0l80014?"
+            "address=505%20York%20Blvd&dc=true&radius=50.0",
+            self.scraper._build_page_url(base_query, 2),
+        )
+
+    def test_build_page_url_cleans_existing_page_segment(self):
+        base_with_page = (
+            "https://www.kijiji.ca/b-hamilton/3d-printer/page-2/k0l80014?"
+            "address=505%20York%20Blvd&dc=true"
+        )
+        expected_p1 = (
+            "https://www.kijiji.ca/b-hamilton/3d-printer/k0l80014?"
+            "address=505%20York%20Blvd&dc=true"
+        )
+        expected_p2 = (
+            "https://www.kijiji.ca/b-hamilton/3d-printer/page-2/k0l80014?"
+            "address=505%20York%20Blvd&dc=true"
+        )
+        expected_p3 = (
+            "https://www.kijiji.ca/b-hamilton/3d-printer/page-3/k0l80014?"
+            "address=505%20York%20Blvd&dc=true"
+        )
+        self.assertEqual(expected_p1, self.scraper._build_page_url(base_with_page, 1))
+        self.assertEqual(expected_p2, self.scraper._build_page_url(base_with_page, 2))
+        self.assertEqual(expected_p3, self.scraper._build_page_url(base_with_page, 3))
+
+    def test_parse_next_data_extracts_apollo_listings_in_order(self):
+        next_data = {
+            "props": {
+                "pageProps": {
+                    "__APOLLO_STATE__": {
+                        "ROOT_QUERY": {
+                            "searchResultsPageByUrl:/b-hamilton/3d-printer/k0l80014": {
+                                "pagination": {
+                                    "__typename": "Pagination",
+                                    "offset": 0,
+                                    "limit": 40,
+                                    "totalCount": 78,
+                                },
+                                "results": {
+                                    "mainListings({\"pagination\":{\"limit\":40,\"offset\":0}})": [
+                                        {"__ref": "StandardListing:1001"},
+                                        {"__ref": "StandardListing:1002"},
+                                    ],
+                                },
+                            },
+                        },
+                        "StandardListing:1001": {
+                            "__typename": "StandardListing",
+                            "id": "1001",
+                            "title": "Bambu Lab X1C",
+                            "description": "Mint condition 3D printer",
+                            "price": {
+                                "__typename": "StandardAmountPrice",
+                                "type": "FIXED",
+                                "amount": 120000,
+                                "originalAmount": 150000,
+                            },
+                            "location": {
+                                "__typename": "ListingLocation",
+                                "name": "Hamilton",
+                                "address": "Hamilton, ON",
+                            },
+                            "activationDate": "2026-10-20T10:00:00Z",
+                            "imageUrls": ["https://media.kijiji.ca/img1.jpg"],
+                            "url": "/v-3d-printer/hamilton/1001",
+                        },
+                        "StandardListing:1002": {
+                            "__typename": "StandardListing",
+                            "id": "1002",
+                            "title": "Ender 3 V2",
+                            "description": "Great starter printer",
+                            "price": {
+                                "__typename": "StandardAmountPrice",
+                                "type": "FIXED",
+                                "amount": 15000,
+                                "originalAmount": None,
+                            },
+                            "location": {
+                                "__typename": "ListingLocation",
+                                "name": "Burlington",
+                            },
+                            "imageUrls": [],
+                            "url": "https://www.kijiji.ca/v-3d-printer/burlington/1002",
+                        },
+                    },
+                },
+            },
+        }
+
+        listings = self.scraper._parse_next_data(next_data)
+        self.assertEqual(2, len(listings))
+
+        # Check first listing
+        self.assertEqual("1001", listings[0].kijiji_id)
+        self.assertEqual("Bambu Lab X1C", listings[0].title)
+        self.assertEqual(1200.0, listings[0].price)
+        self.assertEqual(1500.0, listings[0].nominal_price)
+        self.assertTrue(listings[0].on_sale)
+        self.assertEqual("Hamilton", listings[0].location)
+        self.assertEqual("2026-10-20T10:00:00Z", listings[0].listing_date)
+        self.assertEqual("https://www.kijiji.ca/v-3d-printer/hamilton/1001", listings[0].url)
+        self.assertEqual(["https://media.kijiji.ca/img1.jpg"], listings[0].image_urls)
+
+        # Check second listing
+        self.assertEqual("1002", listings[1].kijiji_id)
+        self.assertEqual(150.0, listings[1].price)
+        self.assertIsNone(listings[1].nominal_price)
+        self.assertFalse(listings[1].on_sale)
+        self.assertEqual("Burlington", listings[1].location)
+
+    def test_has_next_page_from_apollo_pagination(self):
+        # Has next: offset 0 + limit 40 < 78
+        data_has_next = {
+            "props": {
+                "pageProps": {
+                    "__APOLLO_STATE__": {
+                        "ROOT_QUERY": {
+                            "searchResultsPageByUrl:...": {
+                                "pagination": {
+                                    "offset": 0,
+                                    "limit": 40,
+                                    "totalCount": 78,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        self.assertTrue(self.scraper._has_next_page_from_data(data_has_next))
+
+        # Last page: offset 40 + limit 40 >= 78
+        data_last_page = {
+            "props": {
+                "pageProps": {
+                    "__APOLLO_STATE__": {
+                        "ROOT_QUERY": {
+                            "searchResultsPageByUrl:...": {
+                                "pagination": {
+                                    "offset": 40,
+                                    "limit": 40,
+                                    "totalCount": 78,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        }
+        self.assertFalse(self.scraper._has_next_page_from_data(data_last_page))
+
+
 class DatabaseTestCase(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()

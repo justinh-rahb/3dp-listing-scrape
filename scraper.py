@@ -7,7 +7,7 @@ import random
 import re
 import time
 from typing import Optional
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -35,11 +35,18 @@ class KijijiScraper:
         time.sleep(random.uniform(self.delay_min, self.delay_max))
 
     def _build_page_url(self, base_url: str, page: int) -> str:
+        split = urlsplit(base_url)
+        # Strip any existing /page-\d+/ from path so base pagination starts clean
+        clean_path = re.sub(r"/page-\d+(/|$)", r"\1", split.path)
         if page == 1:
-            return base_url
-        # /b-canada/3d-printer/k0l0 -> /b-canada/3d-printer/page-2/k0l0
-        parts = base_url.rsplit("/", 1)
-        return f"{parts[0]}/page-{page}/{parts[1]}"
+            return urlunsplit((split.scheme, split.netloc, clean_path, split.query, split.fragment))
+        # Insert /page-{page}/ before the last segment (e.g. /k0l80014)
+        path_parts = clean_path.rstrip("/").rsplit("/", 1)
+        if len(path_parts) == 2:
+            new_path = f"{path_parts[0]}/page-{page}/{path_parts[1]}"
+        else:
+            new_path = f"{clean_path}/page-{page}"
+        return urlunsplit((split.scheme, split.netloc, new_path, split.query, split.fragment))
 
     def scrape_search(self, base_url: str, max_pages: Optional[int] = None) -> ScrapeOutcome:
         max_pages = max_pages or self.max_pages
@@ -161,15 +168,57 @@ class KijijiScraper:
         # Navigate common Next.js data structures
         props = data.get("props", {}).get("pageProps", {})
 
-        for listing_data in self._find_listing_collections(props):
-            for item in listing_data:
-                try:
-                    listing = self._extract_from_json_item(item)
-                    if listing:
-                        listings.append(listing)
-                except Exception as e:
-                    logger.debug(f"Failed to parse JSON listing item: {e}")
+        # Strategy A: Extract from Apollo State (Kijiji uses Apollo Client cache)
+        apollo_state = props.get("__APOLLO_STATE__", {})
+        if apollo_state:
+            # First, check for ordered listing references in ROOT_QUERY results
+            root_query = apollo_state.get("ROOT_QUERY", {})
+            found_refs = False
+            for qk, qv in root_query.items():
+                if not isinstance(qv, dict):
                     continue
+                results = qv.get("results")
+                if isinstance(results, dict):
+                    for rk, rv in results.items():
+                        if isinstance(rv, list):
+                            for elem in rv:
+                                if isinstance(elem, dict) and "__ref" in elem:
+                                    ref_key = elem["__ref"]
+                                    item = apollo_state.get(ref_key)
+                                    if isinstance(item, dict):
+                                        try:
+                                            listing = self._extract_from_json_item(item)
+                                            if listing:
+                                                listings.append(listing)
+                                                found_refs = True
+                                        except Exception as e:
+                                            logger.debug(f"Failed to parse Apollo ref listing {ref_key}: {e}")
+
+            # Fallback: scan all entries with listing typenames
+            if not found_refs:
+                for key, item in apollo_state.items():
+                    if not isinstance(item, dict):
+                        continue
+                    typename = item.get("__typename", "")
+                    if typename.endswith("Listing") and typename != "ListingLocation":
+                        try:
+                            listing = self._extract_from_json_item(item)
+                            if listing:
+                                listings.append(listing)
+                        except Exception as e:
+                            logger.debug(f"Failed to parse Apollo listing {key}: {e}")
+
+        # Strategy B: Look for conventional listing collections
+        if not listings:
+            for listing_data in self._find_listing_collections(props):
+                for item in listing_data:
+                    try:
+                        listing = self._extract_from_json_item(item)
+                        if listing:
+                            listings.append(listing)
+                    except Exception as e:
+                        logger.debug(f"Failed to parse JSON listing item: {e}")
+                        continue
 
         # Deduplicate in case multiple collections include the same listing.
         deduped = []
@@ -240,9 +289,27 @@ class KijijiScraper:
 
         # Price
         price = None
+        nominal_price = None
+        on_sale = False
         price_data = item.get("price", item.get("amount", item.get("priceInfo", {})))
         if isinstance(price_data, dict):
-            price = price_data.get("amount", price_data.get("value"))
+            raw_amount = price_data.get("amount", price_data.get("value"))
+            typename = price_data.get("__typename", "")
+            is_apollo_price = bool(typename and "Price" in typename)
+
+            if raw_amount is not None:
+                price = float(raw_amount)
+                # Apollo State stores prices in cents (e.g. 35000 = $350.00)
+                if is_apollo_price:
+                    price = price / 100.0
+
+            raw_orig = price_data.get("originalAmount")
+            if raw_orig is not None:
+                nominal_price = float(raw_orig)
+                if is_apollo_price:
+                    nominal_price = nominal_price / 100.0
+                if price is not None and nominal_price > price:
+                    on_sale = True
         elif isinstance(price_data, (int, float)):
             price = float(price_data)
         elif isinstance(price_data, str):
@@ -252,8 +319,15 @@ class KijijiScraper:
         location = None
         loc_data = item.get("location", item.get("address", {}))
         if isinstance(loc_data, dict):
-            parts = [loc_data.get("city", ""), loc_data.get("province", loc_data.get("region", ""))]
-            location = ", ".join(p for p in parts if p)
+            # Apollo State format: {"name": "Guelph", "address": "...", ...}
+            loc_name = loc_data.get("name", "")
+            city = loc_data.get("city", "")
+            province = loc_data.get("province", loc_data.get("region", ""))
+            if loc_name and not city:
+                location = loc_name
+            else:
+                parts = [city, province]
+                location = ", ".join(p for p in parts if p) or None
         elif isinstance(loc_data, str):
             location = loc_data
 
@@ -272,30 +346,59 @@ class KijijiScraper:
 
         # Seller
         seller_name = None
-        seller = item.get("seller", item.get("poster", item.get("user", {})))
+        seller = item.get("seller", item.get("poster", item.get("user", item.get("posterInfo", {}))))
         if isinstance(seller, dict):
             seller_name = seller.get("name", seller.get("displayName"))
+
+        # Listing date (Apollo State uses activationDate/sortingDate)
+        listing_date = item.get("activationDate", item.get("postedDate", item.get("sortingDate")))
 
         return ScrapedListing(
             kijiji_id=kijiji_id,
             url=url,
             title=title,
             price=price,
+            nominal_price=nominal_price,
+            on_sale=on_sale,
             description=description,
             seller_name=seller_name,
             location=location,
+            listing_date=listing_date,
             image_urls=[u for u in image_urls if u],
         )
 
     def _has_next_page_from_data(self, data: dict) -> bool:
         """Check if there's a next page from __NEXT_DATA__."""
         props = data.get("props", {}).get("pageProps", {})
-        # Look for pagination info
+
+        # Check for conventional pagination at pageProps level
         pagination = props.get("pagination", {})
         if pagination:
             current = pagination.get("currentPage", pagination.get("page", 1))
             total = pagination.get("totalPages", pagination.get("numPages", 1))
             return current < total
+
+        # Check Apollo State for offset/limit/totalCount pagination
+        apollo_state = props.get("__APOLLO_STATE__", {})
+        root_query = apollo_state.get("ROOT_QUERY", {})
+        for key, value in root_query.items():
+            if not isinstance(value, dict):
+                continue
+            pag = value.get("pagination")
+            if isinstance(pag, dict) and "totalCount" in pag:
+                offset = pag.get("offset", 0)
+                limit = pag.get("limit", 40)
+                total_count = pag.get("totalCount", 0)
+                return (offset + limit) < total_count
+
+        # Check searchState for currentPage
+        search_state = root_query.get("searchState", {})
+        if isinstance(search_state, dict):
+            current_page = search_state.get("currentPage")
+            if current_page is not None:
+                # If we found listings but no pagination info, assume more pages
+                return True
+
         return True  # Assume more pages if we can't tell
 
     def _parse_html_listings(self, soup: BeautifulSoup) -> list[ScrapedListing]:
@@ -440,6 +543,8 @@ class KijijiScraper:
         # Look for pagination links
         next_link = soup.find("a", attrs={"aria-label": re.compile(r"next|Next", re.I)})
         if next_link:
+            return True
+        if soup.find("a", attrs={"rel": "next"}):
             return True
         # Look for "Next" text in pagination
         pagination = soup.find(["nav", "div"], attrs={"aria-label": re.compile(r"paginat", re.I)})
